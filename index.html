@@ -1,0 +1,889 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scan Resi Online</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Stencil:wght@600;800&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+
+  <div class="masthead">
+    <div>
+      <p class="masthead-title">Scan Resi RJ BIKE</p>
+      <div class="masthead-sub">Manifest digital &middot; scan &rarr; catat &rarr; unduh excel</div>
+    </div>
+    <div class="stat-badges">
+      <div class="badge"><b id="statToday">0</b>hari ini</div>
+      <div class="badge"><b id="statTotal">0</b>total tersimpan</div>
+      <div class="badge"><b id="statDup">0</b>duplikat</div>
+      <div class="badge warn-b"><b id="statNoDetail">0</b>belum ada detail</div>
+    </div>
+  </div>
+  <div class="barcode-rule"></div>  
+
+  <!-- SCAN PANEL -->
+  <div class="panel">
+    <p class="panel-title"><span class="n">1</span> Pindai / Input Resi</p>
+
+    <div class="scan-row">
+      <div class="scan-input-holder">
+        <p class="field-label">Nomor resi</p>
+        <input type="text" id="resiInput" placeholder="Klik di sini, lalu scan pakai alat scanner / ketik manual..." autocomplete="off" autocapitalize="characters">
+        <div class="stamp" id="stampBadge">✓ Tersimpan</div>
+      </div>
+      <div style="display:flex;flex-direction:column;">
+        <p class="field-label">&nbsp;</p>
+        <button class="accent btn-add" id="addBtn">+ Tambah</button>
+      </div>
+    </div>
+
+    <div class="row-2">
+      <div>
+        <p class="field-label">Kurir</p>
+        <select id="kurirSelect">
+          <option>SPX</option>
+          <option>J&amp;T Cargo Shopee</option>
+          <option>J&amp;T Cargo TikTok</option>
+          <option>J&amp;T Cargo Lazada</option>
+          <option>Anteraja Shopee</option>
+          <option>J&amp;T Express Tiktok</option>
+          <option>POS ID Shopee</option>
+          <option>LEX</option>
+          <option>JNE</option>
+          <option>J&amp;T Express</option>
+          <option>SiCepat</option>
+          <option>Anteraja</option>
+          <option>Ninja Xpress</option>
+          <option>ID Express</option>
+          <option>Lion Parcel</option>
+          <option>Pos Indonesia</option>
+          <option>Shopee Express</option>
+          <option>Lainnya</option>
+        </select>
+      </div>
+      <div>
+        <p class="field-label">Catatan (opsional)</p>
+        <input type="text" id="catatanInput" placeholder="mis. rak A3, retur, dsb">
+      </div>
+    </div>
+
+    <p class="hint">Tips: field resi di atas otomatis fokus, jadi kalau kamu pakai alat scanner USB/Bluetooth (yang berperilaku seperti keyboard), tinggal tembak barcode-nya lalu resi akan otomatis masuk ke daftar. Bisa juga ketik manual lalu tekan Enter.</p>
+
+    <div class="cam-toggle-row">
+      <button class="secondary" id="camToggleBtn">📷 Scan pakai kamera HP</button>
+      <span id="camUnsupportedInline" style="display:none;font-size:12px;color:var(--ink-soft);">Kamera scan otomatis tidak didukung browser ini &mdash; gunakan scanner USB atau input manual.</span>
+    </div>
+    <div class="cam-wrap" id="camWrap">
+      <video id="camVideo" playsinline muted></video>
+      <div class="scan-line" id="scanLine"></div>
+      <div class="cam-status" id="camStatus">Arahkan kamera ke barcode resi...</div>
+    </div>
+  </div>
+
+  <!-- MANIFEST PANEL -->
+  <div class="panel">
+    <p class="panel-title"><span class="n">2</span> Daftar Manifest</p>
+
+    <div class="table-controls">
+      <div class="filters">
+        <input type="text" id="searchInput" placeholder="Cari resi / catatan..." style="flex:1;min-width:160px;">
+        <select id="filterKurir">
+          <option value="">Semua kurir</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="secondary small" id="clearFilterBtn">Reset filter</button>
+      </div>
+    </div>
+
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:36px;">No</th>
+            <th>Resi</th>
+            <th style="width:130px;">Kurir</th>
+            <th style="width:120px;">Waktu Scan</th>
+            <th style="width:230px;">Detail Pesanan</th>
+            <th style="width:100px;"></th>
+          </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+      <div class="empty-state" id="emptyState">
+        <div class="big">Belum ada resi</div>
+        <div>Scan atau ketik nomor resi pertama kamu di atas.</div>
+      </div>
+    </div>
+
+    <div class="chips" id="courierChips"></div>
+
+    <div class="footer-bar">
+      <div style="font-size:12px;color:var(--ink-soft);">
+        Data tersimpan otomatis di perangkat ini.
+      </div>
+      <div class="footer-actions">
+        <button class="ghost small" id="resetAllBtn">Hapus semua data</button>
+        <button class="accent" id="exportBtn">⬇ Unduh Excel (.xlsx)</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <h3>Detail Pesanan</h3>
+    <div class="modal-resi" id="modalResiLabel"></div>
+
+    <p class="field-label">Nama toko / pengirim</p>
+    <input type="text" id="mNamaToko" placeholder="mis. Toko Berkah Jaya">
+
+    <p class="field-label">Nama penerima</p>
+    <input type="text" id="mNamaPenerima" placeholder="mis. Budi Santoso">
+
+    <p class="field-label">Alamat</p>
+    <textarea id="mAlamat" placeholder="Alamat lengkap penerima"></textarea>
+
+    <div class="row-2">
+      <div>
+        <p class="field-label">Nama barang</p>
+        <input type="text" id="mNamaBarang" placeholder="mis. Kaos Polos L">
+      </div>
+      <div>
+        <p class="field-label">Qty</p>
+        <input type="text" id="mQty" placeholder="mis. 2">
+      </div>
+    </div>
+
+    <p class="field-label">Tanggal kirim</p>
+    <input type="text" id="mTanggalKirim" placeholder="mis. 26/08/2026">
+
+    <p class="field-label">Catatan</p>
+    <input type="text" id="mCatatan" placeholder="opsional">
+
+    <div class="ocr-box">
+      <p class="field-label" style="margin-top:0;">📋 Tempel teks hasil foto label (dari Google Lens / Notes HP)</p>
+      <textarea id="ocrPasteArea" placeholder="Foto kertas resi pakai Google Lens (Android) atau app Notes/Kamera (iPhone) → salin semua teksnya → tempel di sini."></textarea>
+      <button class="secondary small" id="ocrExtractBtn" type="button" style="margin-top:8px;">🪄 Ekstrak ke field di atas</button>
+      <p class="ocr-note">Ini bukan pemindai barcode — barcode di kertas cuma berisi nomor resi. Untuk ambil alamat/nama/barang dari kertas, cara paling akurat memang lewat OCR foto begini, dicek dulu sebelum disimpan.</p>
+    </div>
+
+    <div class="modal-actions">
+      <button class="secondary" id="modalCancelBtn">Batal</button>
+      <button class="accent" id="modalSaveBtn">Simpan Detail</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  const STORAGE_KEY = "resi-scan-list";
+  const MASTER_KEY = "resi-master-data";
+  let items = [];
+  let masterData = {}; // key: normalized resi -> {namaToko, namaPenerima, alamat, namaBarang, qty, tanggalKirim}
+  let masterCount = 0;
+  let stream = null;
+  let detectTimer = null;
+  let barcodeDetector = null;
+  let lastCamCode = "";
+  let lastCamTime = 0;
+  let activeModalId = null;
+
+  const resiInput = document.getElementById('resiInput');
+  const kurirSelect = document.getElementById('kurirSelect');
+  const catatanInput = document.getElementById('catatanInput');
+  const addBtn = document.getElementById('addBtn');
+  const stampBadge = document.getElementById('stampBadge');
+  const tableBody = document.getElementById('tableBody');
+  const emptyState = document.getElementById('emptyState');
+  const searchInput = document.getElementById('searchInput');
+  const filterKurir = document.getElementById('filterKurir');
+  const clearFilterBtn = document.getElementById('clearFilterBtn');
+  const statToday = document.getElementById('statToday');
+  const statTotal = document.getElementById('statTotal');
+  const statDup = document.getElementById('statDup');
+  const statNoDetail = document.getElementById('statNoDetail');
+  const courierChips = document.getElementById('courierChips');
+  const exportBtn = document.getElementById('exportBtn');
+  const resetAllBtn = document.getElementById('resetAllBtn');
+  const camToggleBtn = document.getElementById('camToggleBtn');
+  const camWrap = document.getElementById('camWrap');
+  const camVideo = document.getElementById('camVideo');
+  const camStatus = document.getElementById('camStatus');
+  const camUnsupportedInline = document.getElementById('camUnsupportedInline');
+  const toastContainer = document.getElementById('toastContainer');
+  const dropzone = document.getElementById('dropzone');
+  const masterFileInput = document.getElementById('masterFileInput');
+  const masterStatusText = document.getElementById('masterStatusText');
+  const clearMasterBtn = document.getElementById('clearMasterBtn');
+  const modalOverlay = document.getElementById('modalOverlay');
+  const modalResiLabel = document.getElementById('modalResiLabel');
+  const mNamaToko = document.getElementById('mNamaToko');
+  const mNamaPenerima = document.getElementById('mNamaPenerima');
+  const mAlamat = document.getElementById('mAlamat');
+  const mNamaBarang = document.getElementById('mNamaBarang');
+  const mQty = document.getElementById('mQty');
+  const mTanggalKirim = document.getElementById('mTanggalKirim');
+  const mCatatan = document.getElementById('mCatatan');
+  const modalCancelBtn = document.getElementById('modalCancelBtn');
+  const modalSaveBtn = document.getElementById('modalSaveBtn');
+  const ocrPasteArea = document.getElementById('ocrPasteArea');
+  const ocrExtractBtn = document.getElementById('ocrExtractBtn');
+
+  const KURIR_LIST = ["SPX","J&T Cargo Shopee","J&T Cargo TikTok","J&T Cargo Lazada","Anteraja Shopee","J&T Express Tiktok","POS ID Shopee","LEX","JNE","J&T Express","SiCepat","Anteraja","Ninja Xpress","ID Express","Lion Parcel","Pos Indonesia","Shopee Express","Lainnya"];
+  KURIR_LIST.forEach(k=>{
+    const opt = document.createElement('option');
+    opt.value = k; opt.textContent = k;
+    filterKurir.appendChild(opt);
+  });
+
+  function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+
+  function fmtTime(iso){
+    const d = new Date(iso);
+    const pad = n => String(n).padStart(2,'0');
+    return `${pad(d.getDate())}/${pad(d.getMonth()+1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  function isToday(iso){
+    const d = new Date(iso), n = new Date();
+    return d.getFullYear()===n.getFullYear() && d.getMonth()===n.getMonth() && d.getDate()===n.getDate();
+  }
+
+  function showToast(msg, type){
+    const t = document.createElement('div');
+    t.className = 'toast' + (type ? (' '+type) : '');
+    t.textContent = msg;
+    toastContainer.appendChild(t);
+    setTimeout(()=>t.remove(), 3000);
+  }
+
+  function showStamp(dup){
+    stampBadge.textContent = dup ? '⚠ Duplikat' : '✓ Tersimpan';
+    stampBadge.classList.remove('show','dup');
+    void stampBadge.offsetWidth;
+    if(dup) stampBadge.classList.add('dup');
+    stampBadge.classList.add('show');
+  }
+
+  async function persist(){
+    try{
+      await window.storage.set(STORAGE_KEY, JSON.stringify(items), false);
+    }catch(e){
+      console.error('Gagal menyimpan data', e);
+    }
+  }
+
+  async function load(){
+    try{
+      const res = await window.storage.get(STORAGE_KEY, false);
+      if(res && res.value){
+        items = JSON.parse(res.value);
+      }
+    }catch(e){
+      items = [];
+    }
+    render();
+  }
+
+  function findDuplicates(resi, excludeId){
+    const norm = resi.trim().toLowerCase();
+    return items.filter(it => it.id !== excludeId && it.resi.trim().toLowerCase() === norm);
+  }
+
+  function normResi(s){ return (s||'').toString().trim().toLowerCase(); }
+
+  function detectCourier(resi){
+    const code = (resi || '').toString().trim().toUpperCase();
+    const courierPrefixes = [
+      ['SPX' && 'ID', 'SPX'],
+      ['201', 'J&T Cargo Shopee'],
+      ['570', 'J&T Cargo TikTok'],
+      ['3000', 'J&T Cargo Lazada'],
+      ['1100', 'Anteraja Shopee'],
+      ['JY' && 'JX', 'J&T Express Tiktok'],
+      ['SHPE', 'POS ID Shopee']
+    ];
+    const match = courierPrefixes.find(([prefix]) => code.startsWith(prefix));
+    return match ? match[1] : 'LEX';
+  }
+
+  function addResi(rawResi, kurir, catatan){
+    const resi = (rawResi || '').trim();
+    if(!resi){
+      showToast('Nomor resi kosong', 'warn');
+      return;
+    }
+    const dupes = findDuplicates(resi, null);
+    const isDup = dupes.length > 0;
+    const match = masterData[normResi(resi)];
+    const detectedKurir = detectCourier(resi);
+    const item = {
+      id: uid(),
+      resi: resi,
+      kurir: detectedKurir || kurir || 'LEX',
+      waktu: new Date().toISOString(),
+      catatan: catatan || '',
+      namaToko: match ? match.namaToko : '',
+      namaPenerima: match ? match.namaPenerima : '',
+      alamat: match ? match.alamat : '',
+      namaBarang: match ? match.namaBarang : '',
+      qty: match ? match.qty : '',
+      tanggalKirim: match ? match.tanggalKirim : '',
+      matched: !!match
+    };
+    items.unshift(item);
+    render();
+    persist();
+    showStamp(isDup);
+    if(isDup){
+      showToast(`Resi "${resi}" sudah pernah discan sebelumnya (${dupes.length}x)`, 'warn');
+    } else if(match){
+      showToast(`Resi "${resi}" ditambahkan — detail pesanan ditemukan`, 'success');
+    } else if(masterCount > 0){
+      showToast(`Resi "${resi}" ditambahkan — tidak ada di data pesanan, isi detail manual`, 'warn');
+    } else {
+      showToast(`Resi "${resi}" ditambahkan`, 'success');
+    }
+    if(navigator.vibrate){ navigator.vibrate(isDup ? [40,60,40] : 60); }
+  }
+
+  function deleteItem(id){
+    items = items.filter(it => it.id !== id);
+    render();
+    persist();
+  }
+
+  function updateItem(id, patch){
+    const it = items.find(x=>x.id===id);
+    if(!it) return;
+    Object.assign(it, patch);
+    render();
+    persist();
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function getFiltered(){
+    const q = searchInput.value.trim().toLowerCase();
+    const k = filterKurir.value;
+    return items.filter(it=>{
+      if(k && it.kurir !== k) return false;
+      if(q){
+        const hay = [it.resi, it.catatan, it.namaToko, it.namaPenerima, it.namaBarang, it.alamat]
+          .map(v => (v||'').toLowerCase()).join(' ');
+        if(!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }
+
+  function render(){
+    // stats
+    const todayCount = items.filter(it=>isToday(it.waktu)).length;
+    statToday.textContent = todayCount;
+    statTotal.textContent = items.length;
+    let dupCount = 0;
+    const seen = new Map();
+    items.forEach(it=>{
+      const key = it.resi.trim().toLowerCase();
+      seen.set(key, (seen.get(key)||0) + 1);
+    });
+    seen.forEach(v=>{ if(v>1) dupCount += v; });
+    statDup.textContent = dupCount;
+    const noDetailCount = items.filter(it => !(it.namaToko || it.namaPenerima || it.alamat || it.namaBarang || it.qty || it.tanggalKirim)).length;
+    statNoDetail.textContent = noDetailCount;
+
+    // chips per courier
+    const counts = {};
+    items.forEach(it=>{ counts[it.kurir] = (counts[it.kurir]||0)+1; });
+    courierChips.innerHTML = '';
+    Object.keys(counts).sort((a,b)=>counts[b]-counts[a]).forEach(k=>{
+      const c = document.createElement('span');
+      c.className = 'chip';
+      c.textContent = `${k}: ${counts[k]}`;
+      courierChips.appendChild(c);
+    });
+
+    const filtered = getFiltered();
+    tableBody.innerHTML = '';
+    emptyState.style.display = filtered.length ? 'none' : 'block';
+
+    filtered.forEach((it, idx)=>{
+      const dupCountForRow = items.filter(x=>x.resi.trim().toLowerCase()===it.resi.trim().toLowerCase()).length;
+      const tr = document.createElement('tr');
+      if(dupCountForRow > 1) tr.classList.add('is-dup');
+
+      const tdNo = document.createElement('td');
+      tdNo.textContent = idx+1;
+      tr.appendChild(tdNo);
+
+      const tdResi = document.createElement('td');
+      tdResi.className = 'resi-cell';
+      tdResi.textContent = it.resi;
+      if(dupCountForRow > 1){
+        const tag = document.createElement('span');
+        tag.className = 'dup-tag';
+        tag.textContent = 'DUP ×' + dupCountForRow;
+        tdResi.appendChild(tag);
+      }
+      tr.appendChild(tdResi);
+
+      const tdKurir = document.createElement('td');
+      const sel = document.createElement('select');
+      sel.className = 'courier-select';
+      KURIR_LIST.forEach(k=>{
+        const o = document.createElement('option');
+        o.value = k; o.textContent = k;
+        if(k === it.kurir) o.selected = true;
+        sel.appendChild(o);
+      });
+      sel.addEventListener('change', ()=> updateItem(it.id, {kurir: sel.value}));
+      tdKurir.appendChild(sel);
+      tr.appendChild(tdKurir);
+
+      const tdTime = document.createElement('td');
+      tdTime.className = 'time-cell';
+      tdTime.textContent = fmtTime(it.waktu);
+      tr.appendChild(tdTime);
+
+      const tdDetail = document.createElement('td');
+      tdDetail.className = 'detail-cell';
+      const hasDetail = it.namaToko || it.namaPenerima || it.alamat || it.namaBarang || it.qty || it.tanggalKirim;
+      let detailHtml = '';
+      if(hasDetail){
+        detailHtml += `<span class="match-tag ${it.matched ? 'ok' : 'no'}">${it.matched ? 'Otomatis' : 'Manual'}</span><br>`;
+        if(it.namaBarang) detailHtml += `<span class="dlabel">Brg:</span> ${escapeHtml(it.namaBarang)}${it.qty ? ' ×'+escapeHtml(String(it.qty)) : ''}<br>`;
+        if(it.namaPenerima) detailHtml += `<span class="dlabel">Ke:</span> ${escapeHtml(it.namaPenerima)}<br>`;
+        if(it.namaToko) detailHtml += `<span class="dlabel">Toko/Pengirim:</span> ${escapeHtml(it.namaToko)}`;
+      } else {
+        detailHtml = `<span class="match-tag no">Belum ada detail</span>`;
+      }
+      tdDetail.innerHTML = detailHtml;
+      tr.appendChild(tdDetail);
+
+      const tdAksi = document.createElement('td');
+      tdAksi.style.whiteSpace = 'nowrap';
+      const detailBtn = document.createElement('button');
+      detailBtn.className = 'detail-btn';
+      detailBtn.textContent = hasDetail ? 'Edit' : 'Isi';
+      detailBtn.addEventListener('click', ()=> openModal(it.id));
+      tdAksi.appendChild(detailBtn);
+      const delBtn = document.createElement('button');
+      delBtn.className = 'del-btn';
+      delBtn.textContent = '✕';
+      delBtn.title = 'Hapus';
+      delBtn.addEventListener('click', ()=>{
+        if(confirm('Hapus resi "' + it.resi + '" dari daftar?')) deleteItem(it.id);
+      });
+      tdAksi.appendChild(delBtn);
+      tr.appendChild(tdAksi);
+
+      tableBody.appendChild(tr);
+    });
+  }
+
+  // ---- add handlers ----
+  function handleAdd(){
+    addResi(resiInput.value, kurirSelect.value, catatanInput.value);
+    resiInput.value = '';
+    catatanInput.value = '';
+    resiInput.focus();
+  }
+  addBtn.addEventListener('click', handleAdd);
+  resiInput.addEventListener('input', ()=>{
+    if(resiInput.value.trim()) kurirSelect.value = detectCourier(resiInput.value);
+  });
+  resiInput.addEventListener('keydown', (e)=>{
+    if(e.key === 'Enter'){
+      e.preventDefault();
+      handleAdd();
+    }
+  });
+  // keep focus on input for handheld scanners
+  window.addEventListener('load', ()=> resiInput.focus());
+  document.addEventListener('click', (e)=>{
+    if(!camWrap.classList.contains('active') && e.target.tagName !== 'INPUT' && e.target.tagName !== 'SELECT' && e.target.tagName !== 'BUTTON'){
+      resiInput.focus();
+    }
+  });
+
+  searchInput.addEventListener('input', render);
+  filterKurir.addEventListener('change', render);
+  clearFilterBtn.addEventListener('click', ()=>{
+    searchInput.value=''; filterKurir.value=''; render();
+  });
+
+  resetAllBtn.addEventListener('click', ()=>{
+    if(items.length === 0) return;
+    if(confirm('Hapus SEMUA data resi yang tersimpan? Tindakan ini tidak bisa dibatalkan.')){
+      items = [];
+      render();
+      persist();
+      showToast('Semua data dihapus');
+    }
+  });
+
+  // ---- export excel ----
+  exportBtn.addEventListener('click', ()=>{
+    if(items.length === 0){
+      showToast('Belum ada data untuk diekspor', 'warn');
+      return;
+    }
+    const exportItems = items.slice().reverse();
+    const resiCounts = exportItems.reduce((counts, it)=>{
+      const key = normResi(it.resi);
+      counts[key] = (counts[key] || 0) + 1;
+      return counts;
+    }, {});
+    const rows = exportItems.map((it, idx)=>({
+      'No': idx+1,
+      'Nomor Resi': it.resi,
+      'Kurir': it.kurir,
+      'Waktu Scan': fmtTime(it.waktu),
+      'Nama Toko / Pengirim': it.namaToko || '',
+      'Nama Penerima': it.namaPenerima || '',
+      'Alamat': it.alamat || '',
+      'Nama Barang': it.namaBarang || '',
+      'Qty': it.qty || '',
+      'Tanggal Kirim': it.tanggalKirim || '',
+      'Sumber Detail': it.matched ? 'Otomatis (data pesanan)' : (it.namaBarang || it.namaPenerima || it.alamat ? 'Manual' : ''),
+      'Catatan': it.catatan || ''
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws['!cols'] = [{wch:5},{wch:22},{wch:14},{wch:13},{wch:20},{wch:20},{wch:32},{wch:20},{wch:6},{wch:14},{wch:20},{wch:24}];
+    const duplicateStyle = {
+      fill: { patternType: 'solid', fgColor: { rgb: 'FECACA' } },
+      font: { color: { rgb: '991B1B' } }
+    };
+    exportItems.forEach((it, rowIndex)=>{
+      if((resiCounts[normResi(it.resi)] || 0) < 2) return;
+      for(let columnIndex = 0; columnIndex < 12; columnIndex++){
+        const cellAddress = XLSX.utils.encode_cell({ r: rowIndex + 1, c: columnIndex });
+        if(ws[cellAddress]) ws[cellAddress].s = duplicateStyle;
+      }
+    });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Manifest Resi');
+    const stamp = new Date();
+    const fname = `manifest-resi-${stamp.getFullYear()}${String(stamp.getMonth()+1).padStart(2,'0')}${String(stamp.getDate()).padStart(2,'0')}-${String(stamp.getHours()).padStart(2,'0')}${String(stamp.getMinutes()).padStart(2,'0')}.xlsx`;
+    XLSX.writeFile(wb, fname);
+    showToast('Excel berhasil diunduh: ' + fname, 'success');
+  });
+
+  // ---- camera scanning ----
+  const hasBarcodeDetector = 'BarcodeDetector' in window;
+  if(!hasBarcodeDetector){
+    camUnsupportedInline.style.display = 'inline';
+    camToggleBtn.disabled = true;
+  }
+
+  async function startCamera(){
+    try{
+      if(hasBarcodeDetector){
+        const formats = await window.BarcodeDetector.getSupportedFormats().catch(()=>null);
+        const wanted = ['code_128','code_39','code_93','codabar','ean_13','ean_8','itf','upc_a','upc_e','qr_code'];
+        const use = formats ? wanted.filter(f=>formats.includes(f)) : wanted;
+        barcodeDetector = new window.BarcodeDetector({ formats: use.length ? use : undefined });
+      }
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      camVideo.srcObject = stream;
+      await camVideo.play();
+      camWrap.classList.add('active');
+      camToggleBtn.textContent = '✕ Tutup kamera';
+      camStatus.textContent = 'Arahkan kamera ke barcode resi...';
+      detectTimer = setInterval(detectLoop, 350);
+    }catch(err){
+      showToast('Tidak bisa mengakses kamera: ' + (err.message || err), 'warn');
+      stopCamera();
+    }
+  }
+
+  function stopCamera(){
+    if(detectTimer){ clearInterval(detectTimer); detectTimer = null; }
+    if(stream){ stream.getTracks().forEach(t=>t.stop()); stream = null; }
+    camWrap.classList.remove('active');
+    camToggleBtn.textContent = '📷 Scan pakai kamera HP';
+  }
+
+  async function detectLoop(){
+    if(!barcodeDetector || !camVideo.videoWidth) return;
+    try{
+      const codes = await barcodeDetector.detect(camVideo);
+      if(codes && codes.length){
+        const value = codes[0].rawValue;
+        const now = Date.now();
+        if(value === lastCamCode && (now - lastCamTime) < 2500) return; // debounce same code
+        lastCamCode = value;
+        lastCamTime = now;
+        camStatus.textContent = 'Terdeteksi: ' + value;
+        addResi(value, kurirSelect.value, catatanInput.value);
+      }
+    }catch(err){
+      // detection errors are non-fatal; ignore transient frames
+    }
+  }
+
+  camToggleBtn.addEventListener('click', ()=>{
+    if(camWrap.classList.contains('active')){
+      stopCamera();
+    }else{
+      startCamera();
+    }
+  });
+
+  // ---- detail modal ----
+  function openModal(id){
+    const it = items.find(x=>x.id===id);
+    if(!it) return;
+    activeModalId = id;
+    modalResiLabel.textContent = 'Resi: ' + it.resi;
+    mNamaToko.value = it.namaToko || '';
+    mNamaPenerima.value = it.namaPenerima || '';
+    mAlamat.value = it.alamat || '';
+    mNamaBarang.value = it.namaBarang || '';
+    mQty.value = it.qty || '';
+    mTanggalKirim.value = it.tanggalKirim || '';
+    mCatatan.value = it.catatan || '';
+    ocrPasteArea.value = '';
+    modalOverlay.classList.add('show');
+  }
+  function closeModal(){
+    modalOverlay.classList.remove('show');
+    activeModalId = null;
+  }
+  modalCancelBtn.addEventListener('click', closeModal);
+  modalOverlay.addEventListener('click', (e)=>{ if(e.target === modalOverlay) closeModal(); });
+
+  // ---- OCR-pasted text extraction (heuristic, keyword-based) ----
+  function extractFromOcrText(raw){
+    const lines = raw.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+    const result = { namaToko:'', namaPenerima:'', alamat:'', namaBarang:'', qty:'', tanggalKirim:'' };
+    const usedIdx = new Set();
+
+    const keywordMap = [
+      { field:'namaPenerima', re:/(kepada|penerima|yth\.?|nama\s*pembeli|customer)\s*[:\-]?\s*(.+)/i },
+      { field:'namaToko', re:/(pengirim|dari|nama\s*toko|toko|seller|shop)\s*[:\-]?\s*(.+)/i },
+      { field:'alamat', re:/(alamat)\s*[:\-]?\s*(.+)/i },
+      { field:'namaBarang', re:/(nama\s*barang|produk|item|isi\s*paket)\s*[:\-]?\s*(.+)/i },
+      { field:'qty', re:/(qty|jumlah|kuantitas|banyak)\s*[:\-]?\s*(\d+)/i },
+      { field:'tanggalKirim', re:/(tanggal\s*kirim|tgl\s*kirim|tanggal|date)\s*[:\-]?\s*(.+)/i }
+    ];
+
+    lines.forEach((line, idx)=>{
+      for(const km of keywordMap){
+        if(!result[km.field]){
+          const m = line.match(km.re);
+          if(m && m[2] && m[2].trim()){
+            result[km.field] = m[2].trim();
+            usedIdx.add(idx);
+            break;
+          }
+        }
+      }
+    });
+
+    // fallback: a standalone date-looking line
+    if(!result.tanggalKirim){
+      const dateRe = /\b(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}|\d{1,2}\s+(jan|feb|mar|apr|mei|jun|jul|agu|sep|okt|nov|des)\w*\s+\d{2,4})\b/i;
+      lines.forEach((line, idx)=>{
+        if(!result.tanggalKirim && !usedIdx.has(idx)){
+          const m = line.match(dateRe);
+          if(m){ result.tanggalKirim = m[0]; usedIdx.add(idx); }
+        }
+      });
+    }
+    // fallback: longest remaining line as address guess
+    if(!result.alamat){
+      let best = '', bestIdx = -1;
+      lines.forEach((line, idx)=>{
+        if(!usedIdx.has(idx) && line.length > best.length && /[a-zA-Z]/.test(line)){
+          best = line; bestIdx = idx;
+        }
+      });
+      if(bestIdx >= 0){ result.alamat = best; usedIdx.add(bestIdx); }
+    }
+    // fallback: first unused short line as recipient name guess
+    if(!result.namaPenerima){
+      const idx = lines.findIndex((l,i)=> !usedIdx.has(i) && l.length <= 40 && /[a-zA-Z]/.test(l));
+      if(idx >= 0){ result.namaPenerima = lines[idx]; usedIdx.add(idx); }
+    }
+    return result;
+  }
+
+  ocrExtractBtn.addEventListener('click', ()=>{
+    const raw = ocrPasteArea.value.trim();
+    if(!raw){
+      showToast('Tempel dulu teks hasil foto/OCR-nya', 'warn');
+      return;
+    }
+    const guess = extractFromOcrText(raw);
+    if(guess.namaToko && !mNamaToko.value) mNamaToko.value = guess.namaToko;
+    if(guess.namaPenerima && !mNamaPenerima.value) mNamaPenerima.value = guess.namaPenerima;
+    if(guess.alamat && !mAlamat.value) mAlamat.value = guess.alamat;
+    if(guess.namaBarang && !mNamaBarang.value) mNamaBarang.value = guess.namaBarang;
+    if(guess.qty && !mQty.value) mQty.value = guess.qty;
+    if(guess.tanggalKirim && !mTanggalKirim.value) mTanggalKirim.value = guess.tanggalKirim;
+    showToast('Field terisi otomatis — cek dan koreksi dulu sebelum disimpan', 'warn');
+  });
+  modalSaveBtn.addEventListener('click', ()=>{
+    if(!activeModalId) return;
+    updateItem(activeModalId, {
+      namaToko: mNamaToko.value.trim(),
+      namaPenerima: mNamaPenerima.value.trim(),
+      alamat: mAlamat.value.trim(),
+      namaBarang: mNamaBarang.value.trim(),
+      qty: mQty.value.trim(),
+      tanggalKirim: mTanggalKirim.value.trim(),
+      catatan: mCatatan.value.trim(),
+      matched: false // manually edited, no longer purely "auto"
+    });
+    showToast('Detail pesanan disimpan', 'success');
+    closeModal();
+  });
+
+  // ---- master data upload & matching ----
+  function guessKey(header){
+    const h = header.toString().toLowerCase().replace(/[^a-z0-9]/g,'');
+    if(/resi|awb|noresi|nomorresi|tracking/.test(h)) return 'resi';
+    if(/toko|seller|penjual|store|shop|pengirim|dari/.test(h)) return 'namaToko';
+    if(/penerima|pembeli|customer|buyer|namapelanggan/.test(h)) return 'namaPenerima';
+    if(/alamat|address/.test(h)) return 'alamat';
+    if(/barang|produk|product|item|nama.?barang/.test(h)) return 'namaBarang';
+    if(/qty|jumlah|quantity|kuantitas/.test(h)) return 'qty';
+    if(/tanggal|tgl|date|kirim/.test(h)) return 'tanggalKirim';
+    return null;
+  }
+
+  function loadMasterFromRows(rows){
+    if(!rows.length){
+      showToast('File kosong atau tidak terbaca', 'warn');
+      return;
+    }
+    const headers = Object.keys(rows[0]);
+    const mapping = {};
+    headers.forEach(h=>{
+      const key = guessKey(h);
+      if(key && !mapping[key]) mapping[key] = h;
+    });
+    if(!mapping.resi){
+      showToast('Tidak ditemukan kolom nomor resi/AWB di file ini', 'warn');
+      return;
+    }
+    const newMaster = {};
+    let count = 0;
+    rows.forEach(r=>{
+      const resiVal = r[mapping.resi];
+      if(!resiVal) return;
+      newMaster[normResi(resiVal)] = {
+        namaToko: mapping.namaToko ? (r[mapping.namaToko]||'').toString().trim() : '',
+        namaPenerima: mapping.namaPenerima ? (r[mapping.namaPenerima]||'').toString().trim() : '',
+        alamat: mapping.alamat ? (r[mapping.alamat]||'').toString().trim() : '',
+        namaBarang: mapping.namaBarang ? (r[mapping.namaBarang]||'').toString().trim() : '',
+        qty: mapping.qty ? (r[mapping.qty]||'').toString().trim() : '',
+        tanggalKirim: mapping.tanggalKirim ? (r[mapping.tanggalKirim]||'').toString().trim() : ''
+      };
+      count++;
+    });
+    masterData = newMaster;
+    masterCount = count;
+    persistMaster();
+    renderMasterStatus();
+    // retroactively fill existing items that match but don't yet have detail
+    let filled = 0;
+    items.forEach(it=>{
+      const m = masterData[normResi(it.resi)];
+      if(m && !it.matched){
+        Object.assign(it, m, {matched:true});
+        filled++;
+      }
+    });
+    if(filled){ render(); persist(); }
+    showToast(`Data pesanan dimuat: ${count} baris${filled ? ', ' + filled + ' resi lama ikut terisi' : ''}`, 'success');
+  }
+
+  function handleMasterFile(file){
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = (e)=>{
+      try{
+        const data = new Uint8Array(e.target.result);
+        const wb = XLSX.read(data, {type:'array', cellDates:true});
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(sheet, {defval:'', raw:false});
+        loadMasterFromRows(rows);
+      }catch(err){
+        showToast('Gagal membaca file: ' + (err.message||err), 'warn');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  function renderMasterStatus(){
+    if(masterCount > 0){
+      masterStatusText.innerHTML = `<span class="ok">✓ ${masterCount} data pesanan dimuat</span> — resi yang cocok akan otomatis terisi detailnya.`;
+      clearMasterBtn.style.display = 'inline-block';
+    } else {
+      masterStatusText.textContent = 'Belum ada data pesanan dimuat — detail akan diisi manual.';
+      clearMasterBtn.style.display = 'none';
+    }
+  }
+
+  async function persistMaster(){
+    try{
+      await window.storage.set(MASTER_KEY, JSON.stringify({data: masterData, count: masterCount}), false);
+    }catch(e){ console.error('Gagal simpan master data', e); }
+  }
+
+  async function loadMaster(){
+    try{
+      const res = await window.storage.get(MASTER_KEY, false);
+      if(res && res.value){
+        const parsed = JSON.parse(res.value);
+        masterData = parsed.data || {};
+        masterCount = parsed.count || 0;
+      }
+    }catch(e){ /* no master data yet */ }
+    renderMasterStatus();
+  }
+
+  dropzone.addEventListener('click', ()=> masterFileInput.click());
+  masterFileInput.addEventListener('change', (e)=>{
+    if(e.target.files && e.target.files[0]) handleMasterFile(e.target.files[0]);
+    masterFileInput.value = '';
+  });
+  dropzone.addEventListener('dragover', (e)=>{ e.preventDefault(); dropzone.classList.add('drag'); });
+  dropzone.addEventListener('dragleave', ()=> dropzone.classList.remove('drag'));
+  dropzone.addEventListener('drop', (e)=>{
+    e.preventDefault();
+    dropzone.classList.remove('drag');
+    if(e.dataTransfer.files && e.dataTransfer.files[0]) handleMasterFile(e.dataTransfer.files[0]);
+  });
+  clearMasterBtn.addEventListener('click', ()=>{
+    if(!confirm('Hapus data pesanan yang sudah dimuat? Detail yang sudah tersimpan di manifest tidak akan terhapus.')) return;
+    masterData = {};
+    masterCount = 0;
+    persistMaster();
+    renderMasterStatus();
+    showToast('Data pesanan dihapus');
+  });
+
+  load();
+  loadMaster();
+})();
+</script>
+</body>
+</html>
