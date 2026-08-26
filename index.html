@@ -307,12 +307,15 @@
   function detectCourier(resi){
     const code = (resi || '').toString().trim().toUpperCase();
     const courierPrefixes = [
-      ['SPX' && 'ID', 'SPX'],
+      ['SPX', 'SPX'],
+      ['ID', 'SPX'],
       ['201', 'J&T Cargo Shopee'],
       ['570', 'J&T Cargo TikTok'],
       ['3000', 'J&T Cargo Lazada'],
       ['1100', 'Anteraja Shopee'],
-      ['JY' && 'JX', 'J&T Express Tiktok'],
+      ['260', 'Anteraja Shopee'],
+      ['JY', 'J&T Express Tiktok'],
+      ['JX', 'J&T Express Tiktok'],
       ['SHPE', 'POS ID Shopee']
     ];
     const match = courierPrefixes.find(([prefix]) => code.startsWith(prefix));
