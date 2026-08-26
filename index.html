@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Stencil:wght@600;800&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="/asset/style.css">
 </head>
 <body>
 <div class="wrap">
@@ -241,7 +241,7 @@
   const ocrPasteArea = document.getElementById('ocrPasteArea');
   const ocrExtractBtn = document.getElementById('ocrExtractBtn');
 
-  const KURIR_LIST = ["SPX","J&T Cargo Shopee","J&T Cargo TikTok","J&T Cargo Lazada","Anteraja Shopee","J&T Express Tiktok","POS ID Shopee","LEX","JNE","J&T Express","SiCepat","Anteraja","Ninja Xpress","ID Express","Lion Parcel","Pos Indonesia","Shopee Express","Lainnya"];
+  const KURIR_LIST = ["J&T Cargo Shopee","J&T Cargo TikTok","J&T Cargo Lazada","SPX","Anteraja Shopee","J&T Express Tiktok","POS ID Shopee","LEX","JNE","J&T Express","SiCepat","Anteraja","Ninja Xpress","ID Express","Lion Parcel","Pos Indonesia","Shopee Express","Lainnya"];
   KURIR_LIST.forEach(k=>{
     const opt = document.createElement('option');
     opt.value = k; opt.textContent = k;
@@ -254,6 +254,18 @@
     const d = new Date(iso);
     const pad = n => String(n).padStart(2,'0');
     return `${pad(d.getDate())}/${pad(d.getMonth()+1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  function fmtDate(iso){
+    const d = new Date(iso);
+    const pad = n => String(n).padStart(2,'0');
+    return `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()}`;
+  }
+
+  function fmtJam(iso){
+    const d = new Date(iso);
+    const pad = n => String(n).padStart(2,'0');
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   }
 
   function isToday(iso){
@@ -307,19 +319,18 @@
   function detectCourier(resi){
     const code = (resi || '').toString().trim().toUpperCase();
     const courierPrefixes = [
-      ['SPX', 'SPX'],
-      ['ID', 'SPX'],
-      ['201', 'J&T Cargo Shopee'],
-      ['570', 'J&T Cargo TikTok'],
-      ['3000', 'J&T Cargo Lazada'],
-      ['1100', 'Anteraja Shopee'],
-      ['260', 'Anteraja Shopee'],
-      ['JY', 'J&T Express Tiktok'],
-      ['JX', 'J&T Express Tiktok'],
-      ['SHPE', 'POS ID Shopee']
+      { prefixes: ['201'], kurir: 'J&T Cargo Shopee' },
+      { prefixes: ['570'], kurir: 'J&T Cargo TikTok' },
+      { prefixes: ['300'], kurir: 'J&T Cargo Lazada' },
+      { prefixes: ['SPX'], kurir: 'SPX' },
+      { prefixes: ['ID'], kurir: 'SPX' },
+      { prefixes: ['1100'], kurir: 'Anteraja Shopee' },
+      { prefixes: ['JY'], kurir: 'J&T Express Tiktok' },
+      { prefixes: ['JX'], kurir: 'J&T Express Tiktok' },
+      { prefixes: ['SHPE'], kurir: 'POS ID Shopee' }
     ];
-    const match = courierPrefixes.find(([prefix]) => code.startsWith(prefix));
-    return match ? match[1] : 'LEX';
+    const match = courierPrefixes.find(c => c.prefixes.some(p => code.startsWith(p)));
+    return match ? match.kurir : 'LEX';
   }
 
   function addResi(rawResi, kurir, catatan){
@@ -541,46 +552,97 @@
   });
 
   // ---- export excel ----
+  const headerStyle = {
+    font: { bold: true },
+    fill: { patternType: 'solid', fgColor: { rgb: 'EFE6D0' } }
+  };
+
+  const duplicateStyle = {
+    fill: { patternType: 'solid', fgColor: { rgb: 'FECACA' } },
+    font: { color: { rgb: '991B1B' }, bold: true }
+  };
+
+  function buildRekapSheet(exportItemsChron){
+    // group resi per kurir, keep only kurir that actually have data,
+    // ordered following KURIR_LIST so the layout stays predictable
+    const groups = {};
+    exportItemsChron.forEach(it=>{
+      const k = it.kurir || 'LAINNYA';
+      if(!groups[k]) groups[k] = [];
+      groups[k].push(it.resi);
+    });
+    const orderedKurir = KURIR_LIST.filter(k => groups[k] && groups[k].length);
+    Object.keys(groups).forEach(k=>{
+      if(!orderedKurir.includes(k)) orderedKurir.push(k); // safety net for unlisted kurir values
+    });
+
+    // sort + de-duplicate resi inside each courier column (INPUT column keeps every raw scan, duplicates included)
+    orderedKurir.forEach(k=>{
+      groups[k] = Array.from(new Set(groups[k])).sort();
+    });
+
+    const rawList = exportItemsChron.map(it => it.resi);
+    const tanggalList = exportItemsChron.map(it => fmtDate(it.waktu));
+    const jamList = exportItemsChron.map(it => fmtJam(it.waktu));
+
+    // count occurrences of every resi across the whole batch, to flag duplicates
+    const resiCounts = {};
+    rawList.forEach(r=>{
+      const key = normResi(r);
+      resiCounts[key] = (resiCounts[key] || 0) + 1;
+    });
+    const isDup = (val) => val && (resiCounts[normResi(val)] || 0) > 1;
+
+    // header row: INPUT | Tanggal Scan | Jam Scan | (blank) | TOTAL RESI | No | Kurir1 | No | Kurir2 | ...
+    const header = ['INPUT', 'Tanggal Scan', 'Jam Scan', '', 'TOTAL RESI', ...orderedKurir.flatMap(k => ['No', k])];
+
+    const maxRows = Math.max(rawList.length, ...orderedKurir.map(k => groups[k].length), 0);
+    const aoa = [header];
+    for(let i=0; i<maxRows; i++){
+      const row = [
+        rawList[i] || '',
+        tanggalList[i] || '',
+        jamList[i] || '',
+        '',
+        i===0 ? exportItemsChron.length : ''
+      ];
+      orderedKurir.forEach(k=>{
+        const val = groups[k][i];
+        row.push(val !== undefined ? i+1 : '');
+        row.push(val !== undefined ? val : '');
+      });
+      aoa.push(row);
+    }
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const cols = [{wch:22},{wch:12},{wch:10},{wch:2},{wch:11}];
+    orderedKurir.forEach(()=> cols.push({wch:5},{wch:22}));
+    ws['!cols'] = cols;
+    header.forEach((_, c)=>{
+      const addr = XLSX.utils.encode_cell({ r:0, c });
+      if(ws[addr]) ws[addr].s = headerStyle;
+    });
+
+    // highlight duplicate resi in red: only in the raw INPUT column (A).
+    // courier columns are already de-duplicated, so leave them styled normally.
+    for(let r=1; r<=maxRows; r++){
+      const inputAddr = XLSX.utils.encode_cell({ r, c: 0 });
+      if(ws[inputAddr] && isDup(ws[inputAddr].v)) ws[inputAddr].s = duplicateStyle;
+    }
+
+    return ws;
+  }
+
   exportBtn.addEventListener('click', ()=>{
     if(items.length === 0){
       showToast('Belum ada data untuk diekspor', 'warn');
       return;
     }
-    const exportItems = items.slice().reverse();
-    const resiCounts = exportItems.reduce((counts, it)=>{
-      const key = normResi(it.resi);
-      counts[key] = (counts[key] || 0) + 1;
-      return counts;
-    }, {});
-    const rows = exportItems.map((it, idx)=>({
-      'No': idx+1,
-      'Nomor Resi': it.resi,
-      'Kurir': it.kurir,
-      'Waktu Scan': fmtTime(it.waktu),
-      'Nama Toko / Pengirim': it.namaToko || '',
-      'Nama Penerima': it.namaPenerima || '',
-      'Alamat': it.alamat || '',
-      'Nama Barang': it.namaBarang || '',
-      'Qty': it.qty || '',
-      'Tanggal Kirim': it.tanggalKirim || '',
-      'Sumber Detail': it.matched ? 'Otomatis (data pesanan)' : (it.namaBarang || it.namaPenerima || it.alamat ? 'Manual' : ''),
-      'Catatan': it.catatan || ''
-    }));
-    const ws = XLSX.utils.json_to_sheet(rows);
-    ws['!cols'] = [{wch:5},{wch:22},{wch:14},{wch:13},{wch:20},{wch:20},{wch:32},{wch:20},{wch:6},{wch:14},{wch:20},{wch:24}];
-    const duplicateStyle = {
-      fill: { patternType: 'solid', fgColor: { rgb: 'FECACA' } },
-      font: { color: { rgb: '991B1B' } }
-    };
-    exportItems.forEach((it, rowIndex)=>{
-      if((resiCounts[normResi(it.resi)] || 0) < 2) return;
-      for(let columnIndex = 0; columnIndex < 12; columnIndex++){
-        const cellAddress = XLSX.utils.encode_cell({ r: rowIndex + 1, c: columnIndex });
-        if(ws[cellAddress]) ws[cellAddress].s = duplicateStyle;
-      }
-    });
+    const exportItemsChron = items.slice().reverse(); // chronological, oldest first
+
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Manifest Resi');
+    XLSX.utils.book_append_sheet(wb, buildRekapSheet(exportItemsChron), 'Manifest Resi');
+
     const stamp = new Date();
     const fname = `manifest-resi-${stamp.getFullYear()}${String(stamp.getMonth()+1).padStart(2,'0')}${String(stamp.getDate()).padStart(2,'0')}-${String(stamp.getHours()).padStart(2,'0')}${String(stamp.getMinutes()).padStart(2,'0')}.xlsx`;
     XLSX.writeFile(wb, fname);
