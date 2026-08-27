@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Stencil:wght@600;800&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
-<link rel="stylesheet" href="./asset/style.css">
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="wrap">
@@ -189,16 +189,70 @@
   "use strict";
 
   const STORAGE_KEY = "resi-scan-list";
-  const MASTER_KEY = "resi-master-data";
   let items = [];
-  let masterData = {}; // key: normalized resi -> {namaToko, namaPenerima, alamat, namaBarang, qty, tanggalKirim}
-  let masterCount = 0;
   let stream = null;
   let detectTimer = null;
   let barcodeDetector = null;
   let lastCamCode = "";
   let lastCamTime = 0;
   let activeModalId = null;
+
+  // ---- notification sounds per ekspedisi (mp3 files, no on-screen management panel) ----
+  // File-file ini harus tetap berada di folder "sounds/" di sebelah index.html.
+  const DEFAULT_SOUNDS = {
+    "J&T Cargo Shopee": "sounds/J T CARGO SHOPEE.mp3",
+    "J&T Cargo TikTok": "sounds/J T CARGO TIKTOK.mp3",
+    "J&T Cargo Lazada": "sounds/J & T Cargo Lazada.mp3",
+    "SPX": "sounds/SPX.mp3",
+    "Anteraja Shopee": "sounds/anteraja shopee.mp3",
+    "J&T Express Tiktok": "sounds/J and T Ekspress tiktok.mp3",
+    "J&T Express": "sounds/J and T Ekspress.mp3",
+    "POS ID Shopee": "sounds/POS ID Shopee.mp3",
+    "LEX": "sounds/L E X.mp3",
+    "JNE": "sounds/J N E.mp3",
+    "SiCepat": "sounds/Si Cepat.mp3",
+    "Anteraja": "sounds/Anteraja.mp3",
+    "Ninja Xpress": "sounds/Ninja Ekspress.mp3",
+    "ID Express": "sounds/ID Ekspress.mp3",
+    "Lion Parcel": "sounds/Lion Parcel.mp3",
+    "Pos Indonesia": "sounds/Pos Indonesia.mp3",
+    "Shopee Express": "sounds/Shopee Ekspress.mp3",
+  };
+  const DUP_SOUND = "sounds/SCAN DOBEL.mp3";
+
+  // fallback beep (dipakai kalau kurir tidak punya mp3 terdaftar) — tanpa file eksternal
+  let audioCtx = null;
+  function beep(freq, duration, type){
+    try{
+      if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = type || 'sine';
+      osc.frequency.value = freq;
+      gain.gain.value = 0.22;
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      const now = audioCtx.currentTime;
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+      osc.start(now);
+      osc.stop(now + duration);
+    }catch(e){ /* ignore playback errors (e.g. autoplay blocked before first interaction) */ }
+  }
+
+  function playCourierSound(kurir){
+    const src = DEFAULT_SOUNDS[kurir];
+    if(!src){ beep(920, 0.14); return; }
+    try{
+      const audio = new Audio(src);
+      audio.play().catch(()=> beep(920, 0.14)); // e.g. file belum ada / belum diupload ke server
+    }catch(e){ beep(920, 0.14); }
+  }
+
+  function playDupSound(){
+    try{
+      const audio = new Audio(DUP_SOUND);
+      audio.play().catch(()=> beep(240, 0.28, 'square'));
+    }catch(e){ beep(240, 0.28, 'square'); }
+  }
 
   const resiInput = document.getElementById('resiInput');
   const kurirSelect = document.getElementById('kurirSelect');
@@ -223,10 +277,6 @@
   const camStatus = document.getElementById('camStatus');
   const camUnsupportedInline = document.getElementById('camUnsupportedInline');
   const toastContainer = document.getElementById('toastContainer');
-  const dropzone = document.getElementById('dropzone');
-  const masterFileInput = document.getElementById('masterFileInput');
-  const masterStatusText = document.getElementById('masterStatusText');
-  const clearMasterBtn = document.getElementById('clearMasterBtn');
   const modalOverlay = document.getElementById('modalOverlay');
   const modalResiLabel = document.getElementById('modalResiLabel');
   const mNamaToko = document.getElementById('mNamaToko');
@@ -324,10 +374,20 @@
       { prefixes: ['300'], kurir: 'J&T Cargo Lazada' },
       { prefixes: ['SPX'], kurir: 'SPX' },
       { prefixes: ['ID'], kurir: 'SPX' },
+      { prefixes: ['110'], kurir: 'Anteraja' },
+      { prefixes: ['100'], kurir: 'Anteraja' },
       { prefixes: ['1100'], kurir: 'Anteraja Shopee' },
       { prefixes: ['JY'], kurir: 'J&T Express Tiktok' },
       { prefixes: ['JX'], kurir: 'J&T Express Tiktok' },
-      { prefixes: ['SHPE'], kurir: 'POS ID Shopee' }
+      { prefixes: ['SHPE'], kurir: 'POS ID Shopee' },
+      { prefixes: ['NVID'], kurir: 'Ninja Xpress'},
+      { prefixes: ['LPN'], kurir: 'Lion Parcel'},
+      { prefixes: ['IDEX'], kurir: 'ID Express'},
+      { prefixes: ['SICE'], kurir: 'SiCepat'},
+      { prefixes: ['POS'], kurir: 'Pos Indonesia'},
+      { prefixes: ['LEX'], kurir: 'LEX'},
+      { prefixes: ['JNE'], kurir: 'JNE'},
+      { prefixes: ['JTEX'], kurir: 'J&T Express'},
     ];
     const match = courierPrefixes.find(c => c.prefixes.some(p => code.startsWith(p)));
     return match ? match.kurir : 'LEX';
@@ -341,7 +401,6 @@
     }
     const dupes = findDuplicates(resi, null);
     const isDup = dupes.length > 0;
-    const match = masterData[normResi(resi)];
     const detectedKurir = detectCourier(resi);
     const item = {
       id: uid(),
@@ -349,24 +408,21 @@
       kurir: detectedKurir || kurir || 'LEX',
       waktu: new Date().toISOString(),
       catatan: catatan || '',
-      namaToko: match ? match.namaToko : '',
-      namaPenerima: match ? match.namaPenerima : '',
-      alamat: match ? match.alamat : '',
-      namaBarang: match ? match.namaBarang : '',
-      qty: match ? match.qty : '',
-      tanggalKirim: match ? match.tanggalKirim : '',
-      matched: !!match
+      namaToko: '',
+      namaPenerima: '',
+      alamat: '',
+      namaBarang: '',
+      qty: '',
+      tanggalKirim: '',
+      matched: false
     };
     items.unshift(item);
     render();
     persist();
     showStamp(isDup);
+    if(isDup){ playDupSound(); } else { playCourierSound(item.kurir); }
     if(isDup){
       showToast(`Resi "${resi}" sudah pernah discan sebelumnya (${dupes.length}x)`, 'warn');
-    } else if(match){
-      showToast(`Resi "${resi}" ditambahkan — detail pesanan ditemukan`, 'success');
-    } else if(masterCount > 0){
-      showToast(`Resi "${resi}" ditambahkan — tidak ada di data pesanan, isi detail manual`, 'warn');
     } else {
       showToast(`Resi "${resi}" ditambahkan`, 'success');
     }
@@ -820,134 +876,7 @@
     closeModal();
   });
 
-  // ---- master data upload & matching ----
-  function guessKey(header){
-    const h = header.toString().toLowerCase().replace(/[^a-z0-9]/g,'');
-    if(/resi|awb|noresi|nomorresi|tracking/.test(h)) return 'resi';
-    if(/toko|seller|penjual|store|shop|pengirim|dari/.test(h)) return 'namaToko';
-    if(/penerima|pembeli|customer|buyer|namapelanggan/.test(h)) return 'namaPenerima';
-    if(/alamat|address/.test(h)) return 'alamat';
-    if(/barang|produk|product|item|nama.?barang/.test(h)) return 'namaBarang';
-    if(/qty|jumlah|quantity|kuantitas/.test(h)) return 'qty';
-    if(/tanggal|tgl|date|kirim/.test(h)) return 'tanggalKirim';
-    return null;
-  }
-
-  function loadMasterFromRows(rows){
-    if(!rows.length){
-      showToast('File kosong atau tidak terbaca', 'warn');
-      return;
-    }
-    const headers = Object.keys(rows[0]);
-    const mapping = {};
-    headers.forEach(h=>{
-      const key = guessKey(h);
-      if(key && !mapping[key]) mapping[key] = h;
-    });
-    if(!mapping.resi){
-      showToast('Tidak ditemukan kolom nomor resi/AWB di file ini', 'warn');
-      return;
-    }
-    const newMaster = {};
-    let count = 0;
-    rows.forEach(r=>{
-      const resiVal = r[mapping.resi];
-      if(!resiVal) return;
-      newMaster[normResi(resiVal)] = {
-        namaToko: mapping.namaToko ? (r[mapping.namaToko]||'').toString().trim() : '',
-        namaPenerima: mapping.namaPenerima ? (r[mapping.namaPenerima]||'').toString().trim() : '',
-        alamat: mapping.alamat ? (r[mapping.alamat]||'').toString().trim() : '',
-        namaBarang: mapping.namaBarang ? (r[mapping.namaBarang]||'').toString().trim() : '',
-        qty: mapping.qty ? (r[mapping.qty]||'').toString().trim() : '',
-        tanggalKirim: mapping.tanggalKirim ? (r[mapping.tanggalKirim]||'').toString().trim() : ''
-      };
-      count++;
-    });
-    masterData = newMaster;
-    masterCount = count;
-    persistMaster();
-    renderMasterStatus();
-    // retroactively fill existing items that match but don't yet have detail
-    let filled = 0;
-    items.forEach(it=>{
-      const m = masterData[normResi(it.resi)];
-      if(m && !it.matched){
-        Object.assign(it, m, {matched:true});
-        filled++;
-      }
-    });
-    if(filled){ render(); persist(); }
-    showToast(`Data pesanan dimuat: ${count} baris${filled ? ', ' + filled + ' resi lama ikut terisi' : ''}`, 'success');
-  }
-
-  function handleMasterFile(file){
-    if(!file) return;
-    const reader = new FileReader();
-    reader.onload = (e)=>{
-      try{
-        const data = new Uint8Array(e.target.result);
-        const wb = XLSX.read(data, {type:'array', cellDates:true});
-        const sheet = wb.Sheets[wb.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(sheet, {defval:'', raw:false});
-        loadMasterFromRows(rows);
-      }catch(err){
-        showToast('Gagal membaca file: ' + (err.message||err), 'warn');
-      }
-    };
-    reader.readAsArrayBuffer(file);
-  }
-
-  function renderMasterStatus(){
-    if(masterCount > 0){
-      masterStatusText.innerHTML = `<span class="ok">✓ ${masterCount} data pesanan dimuat</span> — resi yang cocok akan otomatis terisi detailnya.`;
-      clearMasterBtn.style.display = 'inline-block';
-    } else {
-      masterStatusText.textContent = 'Belum ada data pesanan dimuat — detail akan diisi manual.';
-      clearMasterBtn.style.display = 'none';
-    }
-  }
-
-  async function persistMaster(){
-    try{
-      await window.storage.set(MASTER_KEY, JSON.stringify({data: masterData, count: masterCount}), false);
-    }catch(e){ console.error('Gagal simpan master data', e); }
-  }
-
-  async function loadMaster(){
-    try{
-      const res = await window.storage.get(MASTER_KEY, false);
-      if(res && res.value){
-        const parsed = JSON.parse(res.value);
-        masterData = parsed.data || {};
-        masterCount = parsed.count || 0;
-      }
-    }catch(e){ /* no master data yet */ }
-    renderMasterStatus();
-  }
-
-  dropzone.addEventListener('click', ()=> masterFileInput.click());
-  masterFileInput.addEventListener('change', (e)=>{
-    if(e.target.files && e.target.files[0]) handleMasterFile(e.target.files[0]);
-    masterFileInput.value = '';
-  });
-  dropzone.addEventListener('dragover', (e)=>{ e.preventDefault(); dropzone.classList.add('drag'); });
-  dropzone.addEventListener('dragleave', ()=> dropzone.classList.remove('drag'));
-  dropzone.addEventListener('drop', (e)=>{
-    e.preventDefault();
-    dropzone.classList.remove('drag');
-    if(e.dataTransfer.files && e.dataTransfer.files[0]) handleMasterFile(e.dataTransfer.files[0]);
-  });
-  clearMasterBtn.addEventListener('click', ()=>{
-    if(!confirm('Hapus data pesanan yang sudah dimuat? Detail yang sudah tersimpan di manifest tidak akan terhapus.')) return;
-    masterData = {};
-    masterCount = 0;
-    persistMaster();
-    renderMasterStatus();
-    showToast('Data pesanan dihapus');
-  });
-
   load();
-  loadMaster();
 })();
 </script>
 </body>
