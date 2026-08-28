@@ -11,6 +11,10 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<div id="storageWarningBanner" style="display:none;position:sticky;top:0;z-index:200;background:#A9740F;color:#fff;padding:10px 14px;font-size:13px;font-weight:700;text-align:center;line-height:1.5;">
+  ⚠️ Penyimpanan browser di device ini nggak berfungsi — data yang discan TIDAK akan tersimpan setelah tab/browser ditutup.
+  Coba: matikan mode Private/Incognito, cek URL portnya sama persis tiap buka (mis. selalu 127.0.0.1:5500), atau matikan Shields/pengaturan privasi browser untuk alamat ini.
+</div>
 <div class="wrap">
 
   <div class="masthead">
@@ -19,8 +23,8 @@
       <div class="masthead-sub">Manifest digital &middot; scan &rarr; catat &rarr; unduh excel</div>
     </div>
     <div class="stat-badges">
-      <div class="badge"><b id="statToday">0</b>hari ini</div>
-      <div class="badge"><b id="statTotal">0</b>total tersimpan</div>
+      <div class="badge"><b id="statToday">0</b><span id="statTodayLabel">hari ini</span></div>
+      <div class="badge"><b id="statTotal">0</b>total semua hari</div>
       <div class="badge"><b id="statDup">0</b>duplikat</div>
       <div class="badge warn-b"><b id="statNoDetail">0</b>belum ada detail</div>
     </div>
@@ -78,6 +82,7 @@
     <div class="cam-toggle-row">
       <button class="secondary" id="camToggleBtn">📷 Scan pakai kamera HP</button>
       <span id="camUnsupportedInline" style="display:none;font-size:12px;color:var(--ink-soft);">Kamera scan otomatis tidak didukung browser ini &mdash; gunakan scanner USB atau input manual.</span>
+      <button class="ghost small" id="prefixSettingsBtn" style="margin-left:auto;">⚙ Kode Unik Kurir</button>
     </div>
     <div class="cam-wrap" id="camWrap">
       <video id="camVideo" playsinline muted></video>
@@ -89,6 +94,12 @@
   <!-- MANIFEST PANEL -->
   <div class="panel">
     <p class="panel-title"><span class="n">2</span> Daftar Manifest</p>
+
+    <div class="date-row" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+      <p class="field-label" style="margin:0;">📅 Tanggal</p>
+      <select id="dateSelect" style="max-width:260px;"></select>
+      <span id="archiveNote" class="hint" style="display:none;margin:0;align-items:center;gap:8px;">📁 Mode arsip — resi baru cuma bisa ditambah di sesi hari ini. <button class="ghost small" id="backTodayBtn" type="button">Kembali ke hari ini</button></span>
+    </div>
 
     <div class="table-controls">
       <div class="filters">
@@ -106,6 +117,7 @@
       <table>
         <thead>
           <tr>
+            <th style="width:28px;"><input type="checkbox" id="selectAllChk" title="Pilih semua"></th>
             <th style="width:36px;">No</th>
             <th>Resi</th>
             <th style="width:130px;">Kurir</th>
@@ -129,6 +141,7 @@
         Data tersimpan otomatis di perangkat ini.
       </div>
       <div class="footer-actions">
+        <button class="ghost small" id="bulkDeleteBtn" disabled>Hapus Terpilih (0)</button>
         <button class="ghost small" id="resetAllBtn">Hapus semua data</button>
         <button class="accent" id="exportBtn">⬇ Unduh Excel (.xlsx)</button>
       </div>
@@ -182,14 +195,97 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="prefixModalOverlay">
+  <div class="modal">
+    <h3>Kode Unik &amp; Suara per Ekspedisi</h3>
+    <p class="modal-resi" style="margin-bottom:12px;">Kode unik dipakai untuk auto-deteksi kurir dari awalan nomor resi (pisahkan dengan koma, mis. <code>110, 100</code>). Upload MP3 kalau mau ganti suara notifikasi kurir tertentu — kalau tidak diupload, dipakai suara default (atau bunyi "ting" polos kalau belum ada).</p>
+    <div id="prefixList" style="display:flex;flex-direction:column;gap:10px;max-height:42vh;overflow-y:auto;"></div>
+
+    <div style="border-top:1px dashed var(--line-strong);margin-top:14px;padding-top:14px;">
+      <p class="field-label" style="margin-bottom:8px;">+ Tambah Ekspedisi Baru</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <input type="text" id="newKurirName" placeholder="Nama ekspedisi (mis. Wahana)" style="flex:1 1 140px;padding:8px 10px;font-size:13px;">
+        <input type="text" id="newKurirPrefix" placeholder="Kode unik (opsional, mis. WHN)" style="flex:1 1 140px;padding:8px 10px;font-size:13px;">
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap;">
+        <button type="button" class="secondary small" id="newKurirSoundBtn">🔊 Upload Suara (opsional)</button>
+        <span id="newKurirSoundStatus" style="font-size:12px;color:var(--ink-soft);">Belum ada file</span>
+        <input type="file" id="newKurirSoundInput" accept="audio/mpeg,audio/mp3,.mp3" style="display:none;">
+      </div>
+      <button type="button" class="accent small" id="addKurirBtn" style="margin-top:10px;">+ Tambah Ekspedisi</button>
+    </div>
+
+    <div class="modal-actions" style="justify-content:space-between;">
+      <button class="ghost small" id="prefixResetBtn" type="button">↺ Kembalikan default</button>
+      <div style="display:flex;gap:8px;">
+        <button class="secondary" id="prefixCancelBtn">Batal</button>
+        <button class="accent" id="prefixSaveBtn">Simpan</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="toast-container" id="toastContainer"></div>
 
 <script>
 (function(){
   "use strict";
 
-  const STORAGE_KEY = "resi-scan-list";
+  // ---- storage backend: pakai window.storage (Claude artifact) kalau ada,
+  // kalau tidak (mis. dibuka standalone lewat VS Code / hosting sendiri) fallback ke localStorage
+  // biar data tetap kesimpen di browser itu selama dites di luar Claude ----
+  const appStorage = (function(){
+    const hasNative = typeof window !== 'undefined' && window.storage && typeof window.storage.get === 'function';
+    if(hasNative) return window.storage;
+
+    console.warn('window.storage tidak tersedia — pakai localStorage sebagai fallback (data cuma tersimpan di browser ini).');
+    const PREFIX = 'resiApp__';
+    function fullKey(key, shared){ return PREFIX + (shared ? 'shared__' : 'priv__') + key; }
+    return {
+      async get(key, shared){
+        const raw = window.localStorage.getItem(fullKey(key, shared));
+        if(raw === null) return null;
+        return { key, value: raw, shared: !!shared };
+      },
+      async set(key, value, shared){
+        window.localStorage.setItem(fullKey(key, shared), value);
+        return { key, value, shared: !!shared };
+      },
+      async delete(key, shared){
+        window.localStorage.removeItem(fullKey(key, shared));
+        return { key, deleted: true, shared: !!shared };
+      },
+      async list(prefix, shared){
+        const base = PREFIX + (shared ? 'shared__' : 'priv__');
+        const full = base + (prefix || '');
+        const keys = [];
+        for(let i=0; i<window.localStorage.length; i++){
+          const k = window.localStorage.key(i);
+          if(k && k.indexOf(full) === 0) keys.push(k.slice(base.length));
+        }
+        return { keys, prefix: prefix || '', shared: !!shared };
+      }
+    };
+  })();
+
+  const LEGACY_STORAGE_KEY = "resi-scan-list"; // key used before per-tanggal sessions existed
+  const DATE_INDEX_KEY = "resi-date-index";
+  function dateKey(d){ return `resi-scan-list:${d}`; }
+
+  function todayStr(){
+    const d = new Date();
+    const pad = n => String(n).padStart(2,'0');
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  }
+  function fmtDateLabel(dateStr){
+    const [y,m,d] = dateStr.split('-');
+    return `${d}/${m}/${y}`;
+  }
+
   let items = [];
+  let selectedDate = todayStr();
+  let activeToday = todayStr();
+  let dateIndex = []; // [{date:'YYYY-MM-DD', count:N}], every date that ever had data
   let stream = null;
   let detectTimer = null;
   let barcodeDetector = null;
@@ -220,6 +316,21 @@
   };
   const DUP_SOUND = "sounds/SCAN DOBEL.mp3";
 
+  // ---- suara custom yang diupload user per kurir (override DEFAULT_SOUNDS) ----
+  const CUSTOM_SOUNDS_KEY = "resi-custom-sounds";
+  let customSounds = {}; // kurir -> data URI mp3
+
+  async function persistCustomSounds(){
+    try{ await appStorage.set(CUSTOM_SOUNDS_KEY, JSON.stringify(customSounds), false); }
+    catch(e){ console.error('Gagal simpan suara custom', e); }
+  }
+  async function loadCustomSounds(){
+    try{
+      const res = await appStorage.get(CUSTOM_SOUNDS_KEY, false);
+      if(res && res.value) customSounds = JSON.parse(res.value);
+    }catch(e){ /* belum ada suara custom */ }
+  }
+
   // fallback beep (dipakai kalau kurir tidak punya mp3 terdaftar) — tanpa file eksternal
   let audioCtx = null;
   function beep(freq, duration, type){
@@ -239,6 +350,14 @@
   }
 
   function playCourierSound(kurir){
+    const custom = customSounds[kurir];
+    if(custom){
+      try{
+        const audio = new Audio(custom);
+        audio.play().catch(()=> beep(920, 0.14));
+        return;
+      }catch(e){ /* lanjut ke fallback di bawah */ }
+    }
     const src = DEFAULT_SOUNDS[kurir];
     if(!src){ beep(920, 0.14); return; }
     try{
@@ -290,13 +409,51 @@
   const modalSaveBtn = document.getElementById('modalSaveBtn');
   const ocrPasteArea = document.getElementById('ocrPasteArea');
   const ocrExtractBtn = document.getElementById('ocrExtractBtn');
+  const selectAllChk = document.getElementById('selectAllChk');
+  const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
+  const prefixSettingsBtn = document.getElementById('prefixSettingsBtn');
+  const prefixModalOverlay = document.getElementById('prefixModalOverlay');
+  const prefixList = document.getElementById('prefixList');
+  const prefixCancelBtn = document.getElementById('prefixCancelBtn');
+  const prefixSaveBtn = document.getElementById('prefixSaveBtn');
+  const prefixResetBtn = document.getElementById('prefixResetBtn');
+  const dateSelect = document.getElementById('dateSelect');
+  const archiveNote = document.getElementById('archiveNote');
+  const backTodayBtn = document.getElementById('backTodayBtn');
+  const statTodayLabel = document.getElementById('statTodayLabel');
+  const newKurirName = document.getElementById('newKurirName');
+  const newKurirPrefix = document.getElementById('newKurirPrefix');
+  const newKurirSoundBtn = document.getElementById('newKurirSoundBtn');
+  const newKurirSoundInput = document.getElementById('newKurirSoundInput');
+  const newKurirSoundStatus = document.getElementById('newKurirSoundStatus');
+  const addKurirBtn = document.getElementById('addKurirBtn');
 
-  const KURIR_LIST = ["J&T Cargo Shopee","J&T Cargo TikTok","J&T Cargo Lazada","SPX","Anteraja Shopee","J&T Express Tiktok","POS ID Shopee","LEX","JNE","J&T Express","SiCepat","Anteraja","Ninja Xpress","ID Express","Lion Parcel","Pos Indonesia","Shopee Express","Lainnya"];
-  KURIR_LIST.forEach(k=>{
-    const opt = document.createElement('option');
-    opt.value = k; opt.textContent = k;
-    filterKurir.appendChild(opt);
-  });
+  let selectedIds = new Set();
+
+  let KURIR_LIST = ["J&T Cargo Shopee","J&T Cargo TikTok","J&T Cargo Lazada","SPX","Anteraja Shopee","J&T Express Tiktok","POS ID Shopee","LEX","JNE","J&T Express","SiCepat","Anteraja","Ninja Xpress","ID Express","Lion Parcel","Pos Indonesia","Shopee Express","Lainnya"];
+
+  function rebuildKurirList(){
+    KURIR_LIST = COURIER_PREFIXES.map(c => c.kurir).concat(["Lainnya"]);
+  }
+
+  function rebuildKurirOptions(){
+    const prevKurirVal = kurirSelect.value;
+    const prevFilterVal = filterKurir.value;
+    kurirSelect.innerHTML = '';
+    KURIR_LIST.forEach(k=>{
+      const opt = document.createElement('option');
+      opt.value = k; opt.textContent = k;
+      kurirSelect.appendChild(opt);
+    });
+    filterKurir.innerHTML = '<option value="">Semua kurir</option>';
+    KURIR_LIST.forEach(k=>{
+      const opt = document.createElement('option');
+      opt.value = k; opt.textContent = k;
+      filterKurir.appendChild(opt);
+    });
+    if(KURIR_LIST.includes(prevKurirVal)) kurirSelect.value = prevKurirVal;
+    if(prevFilterVal === '' || KURIR_LIST.includes(prevFilterVal)) filterKurir.value = prevFilterVal;
+  }
 
   function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
 
@@ -339,24 +496,173 @@
     stampBadge.classList.add('show');
   }
 
+  async function loadDateIndex(){
+    try{
+      const res = await appStorage.get(DATE_INDEX_KEY, false);
+      if(res && res.value){
+        const parsed = JSON.parse(res.value);
+        if(Array.isArray(parsed)) return parsed;
+      }
+    }catch(e){ /* belum ada index */ }
+    return [];
+  }
+  async function saveDateIndex(){
+    try{ await appStorage.set(DATE_INDEX_KEY, JSON.stringify(dateIndex), false); }
+    catch(e){ console.error('Gagal simpan index tanggal', e); }
+  }
+  function upsertDateIndex(date, count){
+    const i = dateIndex.findIndex(d=>d.date===date);
+    if(count > 0){
+      if(i>=0) dateIndex[i].count = count; else dateIndex.push({date, count});
+    } else if(i>=0){
+      dateIndex.splice(i,1);
+    }
+    dateIndex.sort((a,b)=> b.date.localeCompare(a.date));
+    saveDateIndex();
+  }
+
+  async function loadItemsForDate(date){
+    try{
+      const res = await appStorage.get(dateKey(date), false);
+      if(res && res.value){
+        const parsed = JSON.parse(res.value);
+        if(Array.isArray(parsed)) return parsed;
+      }
+    }catch(e){ /* belum ada data tanggal ini */ }
+    return [];
+  }
+
+  async function migrateLegacyData(){
+    try{
+      const res = await appStorage.get(LEGACY_STORAGE_KEY, false);
+      if(!res || !res.value) return;
+      const legacyItems = JSON.parse(res.value);
+      if(!Array.isArray(legacyItems) || !legacyItems.length){
+        await appStorage.delete(LEGACY_STORAGE_KEY, false).catch(()=>{});
+        return;
+      }
+      const groups = {};
+      legacyItems.forEach(it=>{
+        const d = new Date(it.waktu);
+        const pad = n => String(n).padStart(2,'0');
+        const key = isNaN(d) ? todayStr() : `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+        if(!groups[key]) groups[key] = [];
+        groups[key].push(it);
+      });
+      for(const [date, arr] of Object.entries(groups)){
+        const existing = await loadItemsForDate(date);
+        const merged = existing.concat(arr);
+        await appStorage.set(dateKey(date), JSON.stringify(merged), false);
+        upsertDateIndex(date, merged.length);
+      }
+      await appStorage.delete(LEGACY_STORAGE_KEY, false).catch(()=>{});
+    }catch(e){ /* tidak ada data lama, aman diabaikan */ }
+  }
+
   async function persist(){
     try{
-      await window.storage.set(STORAGE_KEY, JSON.stringify(items), false);
+      await appStorage.set(dateKey(selectedDate), JSON.stringify(items), false);
     }catch(e){
       console.error('Gagal menyimpan data', e);
     }
+    upsertDateIndex(selectedDate, items.length);
+    populateDateSelect();
+  }
+
+  function grandTotal(){
+    const map = new Map(dateIndex.map(d=>[d.date, d.count]));
+    map.set(selectedDate, items.length);
+    let total = 0;
+    map.forEach(v => total += v);
+    return total;
+  }
+
+  function populateDateSelect(){
+    const today = todayStr();
+    const map = new Map(dateIndex.map(d=>[d.date, d.count]));
+    map.set(selectedDate, items.length);
+    if(!map.has(today)) map.set(today, 0);
+    const sorted = Array.from(map.keys()).sort((a,b)=> b.localeCompare(a));
+    dateSelect.innerHTML = '';
+    sorted.forEach(d=>{
+      const opt = document.createElement('option');
+      opt.value = d;
+      const count = map.get(d) || 0;
+      const label = d === today ? `Hari ini (${fmtDateLabel(d)})` : fmtDateLabel(d);
+      opt.textContent = `${label} — ${count} resi`;
+      dateSelect.appendChild(opt);
+    });
+    dateSelect.value = selectedDate;
+  }
+
+  function updateAddControlsState(){
+    const isViewingToday = selectedDate === todayStr();
+    resiInput.disabled = !isViewingToday;
+    addBtn.disabled = !isViewingToday;
+    kurirSelect.disabled = !isViewingToday;
+    catatanInput.disabled = !isViewingToday;
+    if(!isViewingToday){
+      if(camWrap.classList.contains('active')) stopCamera();
+      camToggleBtn.disabled = true;
+    } else {
+      camToggleBtn.disabled = typeof hasBarcodeDetector !== 'undefined' && !hasBarcodeDetector;
+    }
+    archiveNote.style.display = isViewingToday ? 'none' : 'inline-flex';
+  }
+
+  async function switchToDate(date){
+    items = await loadItemsForDate(date);
+    selectedDate = date;
+    selectedIds = new Set();
+    updateAddControlsState();
+    populateDateSelect();
+    render();
+  }
+
+  dateSelect.addEventListener('change', ()=> switchToDate(dateSelect.value));
+  backTodayBtn.addEventListener('click', ()=> switchToDate(todayStr()));
+
+  // cek pergantian hari secara berkala, biar sesi baru otomatis mulai kosong tiap hari
+  function checkDateRollover(){
+    const nowToday = todayStr();
+    if(nowToday !== activeToday){
+      const wasViewingToday = (selectedDate === activeToday);
+      activeToday = nowToday;
+      if(wasViewingToday){
+        switchToDate(nowToday);
+        showToast('Sesi baru dimulai untuk hari ini 🌅');
+      } else {
+        populateDateSelect();
+      }
+    }
+  }
+  setInterval(checkDateRollover, 60000);
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.visibilityState === 'visible') checkDateRollover();
+  });
+
+  async function selfTestStorage(){
+    const testKey = '__selftest__';
+    const testVal = 'ok-' + Date.now();
+    try{
+      await appStorage.set(testKey, testVal, false);
+      const res = await appStorage.get(testKey, false);
+      if(res && res.value === testVal){
+        appStorage.delete(testKey, false).catch(()=>{});
+        return true;
+      }
+    }catch(e){ /* fall through to warning */ }
+    const banner = document.getElementById('storageWarningBanner');
+    if(banner) banner.style.display = 'block';
+    return false;
   }
 
   async function load(){
-    try{
-      const res = await window.storage.get(STORAGE_KEY, false);
-      if(res && res.value){
-        items = JSON.parse(res.value);
-      }
-    }catch(e){
-      items = [];
-    }
-    render();
+    await selfTestStorage();
+    await migrateLegacyData();
+    dateIndex = await loadDateIndex();
+    activeToday = todayStr();
+    await switchToDate(activeToday);
   }
 
   function findDuplicates(resi, excludeId){
@@ -366,34 +672,58 @@
 
   function normResi(s){ return (s||'').toString().trim().toLowerCase(); }
 
+  // ---- kode unik (prefix) per kurir, dipakai untuk auto-deteksi & bisa diedit lewat modal ----
+  const PREFIX_STORAGE_KEY = "resi-courier-prefixes";
+  const DEFAULT_COURIER_PREFIXES = [
+    { kurir: 'J&T Cargo Shopee', prefixes: ['201'] },
+    { kurir: 'J&T Cargo TikTok', prefixes: ['570'] },
+    { kurir: 'J&T Cargo Lazada', prefixes: ['300'] },
+    { kurir: 'SPX', prefixes: ['SPX', 'ID'] },
+    { kurir: 'Anteraja', prefixes: ['110', '100'] },
+    { kurir: 'Anteraja Shopee', prefixes: ['1100'] },
+    { kurir: 'J&T Express Tiktok', prefixes: ['JY', 'JX'] },
+    { kurir: 'POS ID Shopee', prefixes: ['SHPE'] },
+    { kurir: 'Ninja Xpress', prefixes: ['NVID'] },
+    { kurir: 'Lion Parcel', prefixes: ['LPN'] },
+    { kurir: 'ID Express', prefixes: ['IDEX'] },
+    { kurir: 'SiCepat', prefixes: ['SICE'] },
+    { kurir: 'Pos Indonesia', prefixes: ['POS'] },
+    { kurir: 'LEX', prefixes: ['LEX'] },
+    { kurir: 'JNE', prefixes: ['JNE'] },
+    { kurir: 'J&T Express', prefixes: ['JTEX'] },
+    { kurir: 'Shopee Express', prefixes: [] },
+  ];
+  let COURIER_PREFIXES = DEFAULT_COURIER_PREFIXES.map(c => ({ kurir: c.kurir, prefixes: [...c.prefixes] }));
+
+  async function persistPrefixes(){
+    try{ await appStorage.set(PREFIX_STORAGE_KEY, JSON.stringify(COURIER_PREFIXES), false); }
+    catch(e){ console.error('Gagal simpan kode unik kurir', e); }
+  }
+
+  async function loadPrefixes(){
+    try{
+      const res = await appStorage.get(PREFIX_STORAGE_KEY, false);
+      if(res && res.value){
+        const parsed = JSON.parse(res.value);
+        if(Array.isArray(parsed) && parsed.length) COURIER_PREFIXES = parsed;
+      }
+    }catch(e){ /* pakai default */ }
+    await loadCustomSounds();
+    rebuildKurirList();
+    rebuildKurirOptions();
+  }
+
   function detectCourier(resi){
     const code = (resi || '').toString().trim().toUpperCase();
-    const courierPrefixes = [
-      { prefixes: ['201'], kurir: 'J&T Cargo Shopee' },
-      { prefixes: ['570'], kurir: 'J&T Cargo TikTok' },
-      { prefixes: ['300'], kurir: 'J&T Cargo Lazada' },
-      { prefixes: ['SPX'], kurir: 'SPX' },
-      { prefixes: ['ID'], kurir: 'SPX' },
-      { prefixes: ['110'], kurir: 'Anteraja' },
-      { prefixes: ['100'], kurir: 'Anteraja' },
-      { prefixes: ['1100'], kurir: 'Anteraja Shopee' },
-      { prefixes: ['JY'], kurir: 'J&T Express Tiktok' },
-      { prefixes: ['JX'], kurir: 'J&T Express Tiktok' },
-      { prefixes: ['SHPE'], kurir: 'POS ID Shopee' },
-      { prefixes: ['NVID'], kurir: 'Ninja Xpress'},
-      { prefixes: ['LPN'], kurir: 'Lion Parcel'},
-      { prefixes: ['IDEX'], kurir: 'ID Express'},
-      { prefixes: ['SICE'], kurir: 'SiCepat'},
-      { prefixes: ['POS'], kurir: 'Pos Indonesia'},
-      { prefixes: ['LEX'], kurir: 'LEX'},
-      { prefixes: ['JNE'], kurir: 'JNE'},
-      { prefixes: ['JTEX'], kurir: 'J&T Express'},
-    ];
-    const match = courierPrefixes.find(c => c.prefixes.some(p => code.startsWith(p)));
+    const match = COURIER_PREFIXES.find(c => (c.prefixes||[]).some(p => p && code.startsWith(p.toString().trim().toUpperCase())));
     return match ? match.kurir : 'LEX';
   }
 
   function addResi(rawResi, kurir, catatan){
+    if(selectedDate !== todayStr()){
+      showToast('Kamu lagi lihat arsip tanggal lama — pindah ke "Hari ini" dulu buat nambah resi baru', 'warn');
+      return;
+    }
     const resi = (rawResi || '').trim();
     if(!resi){
       showToast('Nomor resi kosong', 'warn');
@@ -431,6 +761,7 @@
 
   function deleteItem(id){
     items = items.filter(it => it.id !== id);
+    selectedIds.delete(id);
     render();
     persist();
   }
@@ -463,9 +794,9 @@
 
   function render(){
     // stats
-    const todayCount = items.filter(it=>isToday(it.waktu)).length;
-    statToday.textContent = todayCount;
-    statTotal.textContent = items.length;
+    statToday.textContent = items.length;
+    statTodayLabel.textContent = (selectedDate === todayStr()) ? 'hari ini' : ('tgl ' + fmtDateLabel(selectedDate));
+    statTotal.textContent = grandTotal();
     let dupCount = 0;
     const seen = new Map();
     items.forEach(it=>{
@@ -496,6 +827,17 @@
       const dupCountForRow = items.filter(x=>x.resi.trim().toLowerCase()===it.resi.trim().toLowerCase()).length;
       const tr = document.createElement('tr');
       if(dupCountForRow > 1) tr.classList.add('is-dup');
+
+      const tdChk = document.createElement('td');
+      const chk = document.createElement('input');
+      chk.type = 'checkbox';
+      chk.checked = selectedIds.has(it.id);
+      chk.addEventListener('change', ()=>{
+        if(chk.checked) selectedIds.add(it.id); else selectedIds.delete(it.id);
+        syncSelectionUI();
+      });
+      tdChk.appendChild(chk);
+      tr.appendChild(tdChk);
 
       const tdNo = document.createElement('td');
       tdNo.textContent = idx+1;
@@ -564,7 +906,51 @@
 
       tableBody.appendChild(tr);
     });
+
+    syncSelectionUI(filtered);
   }
+
+  function syncSelectionUI(filtered){
+    const list = filtered || getFiltered();
+    const filteredIds = list.map(it=>it.id);
+    // drop selected ids that no longer exist in items at all (e.g. after export/reset)
+    const existingIds = new Set(items.map(it=>it.id));
+    selectedIds.forEach(id=>{ if(!existingIds.has(id)) selectedIds.delete(id); });
+
+    const selectedCount = selectedIds.size;
+    bulkDeleteBtn.textContent = `Hapus Terpilih (${selectedCount})`;
+    bulkDeleteBtn.disabled = selectedCount === 0;
+
+    if(filteredIds.length === 0){
+      selectAllChk.checked = false;
+      selectAllChk.indeterminate = false;
+    } else {
+      const selectedInView = filteredIds.filter(id=>selectedIds.has(id)).length;
+      selectAllChk.checked = selectedInView === filteredIds.length;
+      selectAllChk.indeterminate = selectedInView > 0 && selectedInView < filteredIds.length;
+    }
+  }
+
+  selectAllChk.addEventListener('change', ()=>{
+    const filteredIds = getFiltered().map(it=>it.id);
+    if(selectAllChk.checked){
+      filteredIds.forEach(id=>selectedIds.add(id));
+    } else {
+      filteredIds.forEach(id=>selectedIds.delete(id));
+    }
+    render();
+  });
+
+  bulkDeleteBtn.addEventListener('click', ()=>{
+    if(selectedIds.size === 0) return;
+    if(confirm(`Hapus ${selectedIds.size} resi terpilih dari daftar?`)){
+      items = items.filter(it => !selectedIds.has(it.id));
+      selectedIds.clear();
+      render();
+      persist();
+      showToast('Resi terpilih dihapus');
+    }
+  });
 
   // ---- add handlers ----
   function handleAdd(){
@@ -599,11 +985,11 @@
 
   resetAllBtn.addEventListener('click', ()=>{
     if(items.length === 0) return;
-    if(confirm('Hapus SEMUA data resi yang tersimpan? Tindakan ini tidak bisa dibatalkan.')){
+    if(confirm(`Hapus SEMUA data resi pada tanggal ${fmtDateLabel(selectedDate)}? Tindakan ini tidak bisa dibatalkan.`)){
       items = [];
       render();
       persist();
-      showToast('Semua data dihapus');
+      showToast('Semua data tanggal ini dihapus');
     }
   });
 
@@ -700,7 +1086,7 @@
     XLSX.utils.book_append_sheet(wb, buildRekapSheet(exportItemsChron), 'Manifest Resi');
 
     const stamp = new Date();
-    const fname = `manifest-resi-${stamp.getFullYear()}${String(stamp.getMonth()+1).padStart(2,'0')}${String(stamp.getDate()).padStart(2,'0')}-${String(stamp.getHours()).padStart(2,'0')}${String(stamp.getMinutes()).padStart(2,'0')}.xlsx`;
+    const fname = `No resi ${selectedDate} ( ${String(stamp.getHours()).padStart(2,'0')}.${String(stamp.getMinutes()).padStart(2,'0')} ).xlsx`;
     XLSX.writeFile(wb, fname);
     showToast('Excel berhasil diunduh: ' + fname, 'success');
   });
@@ -876,7 +1262,152 @@
     closeModal();
   });
 
+  // ---- kode unik & suara kurir settings modal ----
+  let pendingNewKurirSound = null; // data URI menunggu disimpan pas "+ Tambah Ekspedisi" diklik
+
+  function renderPrefixList(){
+    prefixList.innerHTML = COURIER_PREFIXES.map((c, i) => {
+      const hasSound = !!customSounds[c.kurir];
+      return `
+      <div style="display:flex;flex-direction:column;gap:6px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--panel-2);">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div style="flex:0 0 140px;font-size:13px;font-weight:600;">${escapeHtml(c.kurir)}</div>
+          <input type="text" class="prefix-input" data-idx="${i}" value="${escapeHtml((c.prefixes||[]).join(', '))}" placeholder="mis. 110, 100" style="flex:1;padding:7px 10px;font-size:13px;">
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+          <span style="font-size:11px;color:${hasSound ? 'var(--success)' : 'var(--ink-soft)'};">${hasSound ? '🔊 suara custom' : '— pakai suara default'}</span>
+          <button type="button" class="ghost small" data-sound-upload="${i}">Upload MP3</button>
+          ${hasSound ? `<button type="button" class="ghost small" data-sound-play="${i}">▶ Tes</button><button type="button" class="ghost small" data-sound-remove="${i}">Hapus suara</button>` : ''}
+          <input type="file" accept="audio/mpeg,audio/mp3,.mp3" data-sound-file="${i}" style="display:none;">
+        </div>
+      </div>`;
+    }).join('');
+
+    prefixList.querySelectorAll('[data-sound-upload]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const idx = btn.getAttribute('data-sound-upload');
+        prefixList.querySelector(`[data-sound-file="${idx}"]`).click();
+      });
+    });
+    prefixList.querySelectorAll('[data-sound-play]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const idx = Number(btn.getAttribute('data-sound-play'));
+        playCourierSound(COURIER_PREFIXES[idx].kurir);
+      });
+    });
+    prefixList.querySelectorAll('[data-sound-remove]').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        const idx = Number(btn.getAttribute('data-sound-remove'));
+        delete customSounds[COURIER_PREFIXES[idx].kurir];
+        await persistCustomSounds();
+        renderPrefixList();
+        showToast('Suara custom dihapus, balik ke default');
+      });
+    });
+    prefixList.querySelectorAll('[data-sound-file]').forEach(inp=>{
+      inp.addEventListener('change', (e)=>{
+        const idx = Number(inp.getAttribute('data-sound-file'));
+        const file = e.target.files && e.target.files[0];
+        if(!file) return;
+        if(file.size > 2 * 1024 * 1024){
+          showToast('File terlalu besar, maksimal 2MB', 'warn');
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = async ()=>{
+          customSounds[COURIER_PREFIXES[idx].kurir] = reader.result;
+          await persistCustomSounds();
+          renderPrefixList();
+          showToast(`Suara untuk "${COURIER_PREFIXES[idx].kurir}" berhasil diupload`, 'success');
+        };
+        reader.readAsDataURL(file);
+      });
+    });
+  }
+
+  newKurirSoundBtn.addEventListener('click', ()=> newKurirSoundInput.click());
+  newKurirSoundInput.addEventListener('change', (e)=>{
+    const file = e.target.files && e.target.files[0];
+    if(!file) return;
+    if(file.size > 2 * 1024 * 1024){
+      showToast('File terlalu besar, maksimal 2MB', 'warn');
+      newKurirSoundInput.value = '';
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = ()=>{
+      pendingNewKurirSound = reader.result;
+      newKurirSoundStatus.textContent = '✓ ' + file.name;
+    };
+    reader.readAsDataURL(file);
+  });
+
+  addKurirBtn.addEventListener('click', async ()=>{
+    const name = newKurirName.value.trim();
+    if(!name){
+      showToast('Nama ekspedisi wajib diisi', 'warn');
+      return;
+    }
+    const dup = COURIER_PREFIXES.some(c => c.kurir.toLowerCase() === name.toLowerCase()) || name.toLowerCase() === 'lainnya';
+    if(dup){
+      showToast('Nama ekspedisi ini sudah ada di daftar', 'warn');
+      return;
+    }
+    const prefixes = newKurirPrefix.value.split(',').map(s=>s.trim()).filter(Boolean);
+    COURIER_PREFIXES.push({ kurir: name, prefixes });
+    if(pendingNewKurirSound){
+      customSounds[name] = pendingNewKurirSound;
+      await persistCustomSounds();
+    }
+    await persistPrefixes();
+    rebuildKurirList();
+    rebuildKurirOptions();
+    renderPrefixList();
+
+    newKurirName.value = '';
+    newKurirPrefix.value = '';
+    pendingNewKurirSound = null;
+    newKurirSoundStatus.textContent = 'Belum ada file';
+    newKurirSoundInput.value = '';
+
+    showToast(`Ekspedisi "${name}" ditambahkan`, 'success');
+  });
+
+  function openPrefixModal(){
+    renderPrefixList();
+    prefixModalOverlay.classList.add('show');
+  }
+  function closePrefixModal(){
+    prefixModalOverlay.classList.remove('show');
+  }
+  prefixSettingsBtn.addEventListener('click', openPrefixModal);
+  prefixCancelBtn.addEventListener('click', closePrefixModal);
+  prefixModalOverlay.addEventListener('click', (e)=>{ if(e.target === prefixModalOverlay) closePrefixModal(); });
+
+  prefixSaveBtn.addEventListener('click', ()=>{
+    const inputs = prefixList.querySelectorAll('.prefix-input');
+    inputs.forEach(inp=>{
+      const idx = Number(inp.getAttribute('data-idx'));
+      const codes = inp.value.split(',').map(s=>s.trim()).filter(Boolean);
+      COURIER_PREFIXES[idx].prefixes = codes;
+    });
+    persistPrefixes();
+    closePrefixModal();
+    showToast('Kode unik kurir disimpan', 'success');
+  });
+
+  prefixResetBtn.addEventListener('click', ()=>{
+    if(!confirm('Kembalikan semua kode unik kurir ke pengaturan default? Ekspedisi tambahan & suara custom yang sudah diupload tidak akan terhapus.')) return;
+    COURIER_PREFIXES = DEFAULT_COURIER_PREFIXES.map(c => ({ kurir: c.kurir, prefixes: [...c.prefixes] }));
+    persistPrefixes();
+    rebuildKurirList();
+    rebuildKurirOptions();
+    renderPrefixList();
+    showToast('Kode unik kurir dikembalikan ke default');
+  });
+
   load();
+  loadPrefixes();
 })();
 </script>
 </body>
