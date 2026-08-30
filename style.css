@@ -360,3 +360,35 @@
   }
   #ocrPasteArea{min-height:80px;font-size:13px;}
   .ocr-note{font-size:11px;color:var(--ink-soft);margin:8px 0 0;line-height:1.5;}
+
+  /* ---- Login & sesi user (multi-cabang) ---- */
+  .login-overlay{
+    position:fixed;inset:0;background:var(--bg);
+    display:flex;align-items:center;justify-content:center;
+    z-index:300;padding:16px;
+  }
+  .login-card{
+    background:var(--panel);border:1.5px solid var(--line-strong);
+    border-radius:var(--radius);padding:26px;max-width:360px;width:100%;
+  }
+  .login-card h2{font-family:var(--display);text-transform:uppercase;margin:0 0 4px;font-size:24px;}
+  .login-card p.sub{font-size:12.5px;color:var(--ink-soft);margin:0 0 18px;}
+  .login-error{
+    font-size:12.5px;color:var(--warn);background:var(--warn-bg);
+    border:1px solid var(--warn);border-radius:6px;padding:8px 10px;
+    margin-top:10px;display:none;
+  }
+  .login-error.show{display:block;}
+  .user-chip{
+    font-family:var(--mono);font-size:12px;font-weight:700;
+    border:1.5px solid var(--ink);padding:5px 10px;border-radius:999px;
+    background:var(--panel-2);display:flex;align-items:center;gap:6px;white-space:nowrap;
+  }
+  .role-tag{font-size:10px;font-weight:700;padding:1px 6px;border-radius:4px;border:1px solid var(--accent);color:var(--accent);}
+  .admin-row{
+    display:flex;justify-content:space-between;align-items:center;gap:8px;
+    padding:8px;border:1px solid var(--line);border-radius:8px;
+    background:var(--panel-2);flex-wrap:wrap;
+  }
+  .admin-row .meta{font-size:12px;color:var(--ink-soft);}
+  .admin-row .meta b{color:var(--ink);}

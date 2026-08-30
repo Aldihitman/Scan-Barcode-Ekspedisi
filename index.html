@@ -15,7 +15,22 @@
   ⚠️ Penyimpanan browser di device ini nggak berfungsi — data yang discan TIDAK akan tersimpan setelah tab/browser ditutup.
   Coba: matikan mode Private/Incognito, cek URL portnya sama persis tiap buka (mis. selalu 127.0.0.1:5500), atau matikan Shields/pengaturan privasi browser untuk alamat ini.
 </div>
-<div class="wrap">
+
+<div class="login-overlay" id="loginOverlay">
+  <div class="login-card">
+    <h2>Scan Resi RJ BIKE</h2>
+    <p class="sub">Masuk pakai akun cabang kamu untuk mulai scan.</p>
+    <p class="field-label">Username</p>
+    <input type="text" id="loginUsername" autocomplete="username" placeholder="username">
+    <p class="field-label">Password</p>
+    <input type="password" id="loginPassword" autocomplete="current-password" placeholder="••••••••">
+    <div class="login-error" id="loginError"></div>
+    <button class="accent" id="loginBtn" style="width:100%;margin-top:14px;">Masuk</button>
+    <p class="hint" id="loginDefaultHint">Belum pernah setup akun sama sekali? Pakai <b>admin / admin123</b> dulu, lalu langsung bikin akun tiap cabang &amp; ganti password admin lewat menu "Kelola Cabang &amp; User".</p>
+  </div>
+</div>
+
+<div class="wrap" id="appWrap" style="display:none;">
 
   <div class="masthead">
     <div>
@@ -29,6 +44,13 @@
       <div class="badge warn-b"><b id="statNoDetail">0</b>belum ada detail</div>
     </div>
   </div>
+
+  <div class="cam-toggle-row" style="margin-top:10px;">
+    <div class="user-chip"><span id="sessionUserLabel">-</span><span class="role-tag" id="sessionRoleTag">-</span></div>
+    <button class="ghost small" id="manageBtn" style="display:none;">🛠 Kelola Cabang &amp; User</button>
+    <button class="ghost small" id="logoutBtn" style="margin-left:auto;">Keluar</button>
+  </div>
+
   <div class="barcode-rule"></div>  
 
   <!-- SCAN PANEL -->
@@ -45,6 +67,12 @@
         <p class="field-label">&nbsp;</p>
         <button class="accent btn-add" id="addBtn">+ Tambah</button>
       </div>
+    </div>
+
+    <div style="margin-top:10px;">
+      <p class="field-label">Cabang</p>
+      <select id="cabangSelect" style="display:none;"></select>
+      <input type="text" id="cabangReadonly" disabled style="display:none;">
     </div>
 
     <div class="row-2">
@@ -107,6 +135,9 @@
         <select id="filterKurir">
           <option value="">Semua kurir</option>
         </select>
+        <select id="filterCabang" style="display:none;">
+          <option value="">Semua cabang</option>
+        </select>
       </div>
       <div style="display:flex;gap:8px;">
         <button class="secondary small" id="clearFilterBtn">Reset filter</button>
@@ -121,6 +152,7 @@
             <th style="width:36px;">No</th>
             <th>Resi</th>
             <th style="width:130px;">Kurir</th>
+            <th style="width:110px;">Cabang</th>
             <th style="width:120px;">Waktu Scan</th>
             <th style="width:230px;">Detail Pesanan</th>
             <th style="width:100px;"></th>
@@ -225,6 +257,43 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="adminModalOverlay">
+  <div class="modal">
+    <h3>Kelola Cabang &amp; User</h3>
+    <p class="modal-resi" style="margin-bottom:12px;">Tiap user login pakai username + password dan otomatis ke-tag ke satu cabang. Semua hasil scan dari semua cabang masuk ke database yang sama — dibedakan lewat kolom "Cabang" di tabel &amp; file Excel.</p>
+
+    <p class="field-label">+ Tambah Cabang</p>
+    <div style="display:flex;gap:8px;">
+      <input type="text" id="newCabangName" placeholder="mis. Cabang Bandung" style="flex:1;">
+      <button class="secondary small" id="addCabangBtn" type="button">+ Tambah</button>
+    </div>
+    <div id="cabangListWrap" style="margin-top:10px;display:flex;flex-direction:column;gap:6px;max-height:20vh;overflow-y:auto;"></div>
+
+    <div style="border-top:1px dashed var(--line-strong);margin-top:16px;padding-top:14px;">
+      <p class="field-label">+ Tambah User</p>
+      <div class="row-2">
+        <input type="text" id="newUserUsername" placeholder="Username">
+        <input type="text" id="newUserPassword" placeholder="Password">
+      </div>
+      <div class="row-2" style="margin-top:10px;">
+        <select id="newUserRole">
+          <option value="user">User (staf 1 cabang)</option>
+          <option value="admin">Admin (lihat semua cabang)</option>
+        </select>
+        <select id="newUserCabang"></select>
+      </div>
+      <button class="accent small" id="addUserBtn" type="button" style="margin-top:10px;">+ Tambah User</button>
+    </div>
+
+    <p class="field-label" style="margin-top:16px;">Daftar User</p>
+    <div id="userListWrap" style="display:flex;flex-direction:column;gap:6px;max-height:26vh;overflow-y:auto;"></div>
+
+    <div class="modal-actions">
+      <button class="secondary" id="adminModalCloseBtn">Tutup</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast-container" id="toastContainer"></div>
 
 <script>
@@ -269,8 +338,130 @@
   })();
 
   const LEGACY_STORAGE_KEY = "resi-scan-list"; // key used before per-tanggal sessions existed
-  const DATE_INDEX_KEY = "resi-date-index";
-  function dateKey(d){ return `resi-scan-list:${d}`; }
+  const LEGACY_CABANG_NAME = "Data Lama (Migrasi)"; // cabang penampung data lama sebelum ada sistem multi-cabang
+  function dateIndexKey(cabang){ return `resi-date-index:${slugify(cabang)}`; }
+  function dateKey(d, cabang){ return `resi-scan-list:${d}:${slugify(cabang)}`; }
+
+  // ============== AUTH & MULTI-CABANG ==============
+  const USERS_KEY = 'resi-users';
+  const CABANG_KEY = 'resi-cabang-list';
+  const SESSION_LS_KEY = 'resiApp__session'; // localStorage biasa (per-device), sengaja terpisah dari appStorage
+  const ALL_CABANG_SENTINEL = '__ALL__';
+
+  let USERS = [];
+  let CABANG_LIST = [];
+  let currentUser = null; // {id, username, role, cabang}
+
+  function slugify(s){
+    return (s||'').toString().trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'') || 'cabang';
+  }
+
+  // Catatan: ini cuma obfuscation ringan, BUKAN enkripsi yang aman.
+  // Cukup untuk mencegah password kebaca polos-polosan di storage, bukan pengganti sistem login sungguhan.
+  function simpleHash(s){
+    let h = 0;
+    const str = 'rj-' + (s || '');
+    for(let i=0; i<str.length; i++){ h = (Math.imul(31, h) + str.charCodeAt(i)) | 0; }
+    return 'h' + (h >>> 0).toString(36) + '_' + btoa(unescape(encodeURIComponent(s || ''))).replace(/=/g,'');
+  }
+  function checkPassword(plain, stored){ return simpleHash(plain) === stored; }
+
+  async function loadUsers(){
+    try{
+      const res = await appStorage.get(USERS_KEY, true);
+      if(res && res.value){
+        const parsed = JSON.parse(res.value);
+        if(Array.isArray(parsed)) return parsed;
+      }
+    }catch(e){ /* belum ada data user */ }
+    return [];
+  }
+  async function saveUsers(){
+    try{ await appStorage.set(USERS_KEY, JSON.stringify(USERS), true); }
+    catch(e){ console.error('Gagal simpan data user', e); }
+  }
+  async function loadCabangList(){
+    try{
+      const res = await appStorage.get(CABANG_KEY, true);
+      if(res && res.value){
+        const parsed = JSON.parse(res.value);
+        if(Array.isArray(parsed)) return parsed;
+      }
+    }catch(e){ /* belum ada daftar cabang */ }
+    return [];
+  }
+  async function saveCabangList(){
+    try{ await appStorage.set(CABANG_KEY, JSON.stringify(CABANG_LIST), true); }
+    catch(e){ console.error('Gagal simpan daftar cabang', e); }
+  }
+
+  async function ensureDefaultAdmin(){
+    if(USERS.length === 0){
+      USERS.push({ id: uid(), username: 'admin', password: simpleHash('admin123'), role: 'admin', cabang: '' });
+      await saveUsers();
+    }
+  }
+
+  function findUserByUsername(u){
+    const norm = (u || '').trim().toLowerCase();
+    return USERS.find(x => x.username.trim().toLowerCase() === norm);
+  }
+
+  function saveSession(user){
+    try{ window.localStorage.setItem(SESSION_LS_KEY, JSON.stringify({ id:user.id, username:user.username, role:user.role, cabang:user.cabang })); }
+    catch(e){ /* ignore */ }
+  }
+  function clearSession(){ try{ window.localStorage.removeItem(SESSION_LS_KEY); }catch(e){} }
+  function readSession(){
+    try{
+      const raw = window.localStorage.getItem(SESSION_LS_KEY);
+      return raw ? JSON.parse(raw) : null;
+    }catch(e){ return null; }
+  }
+
+  function getActiveCabang(){
+    if(currentUser.role === 'admin') return cabangSelect.value || ALL_CABANG_SENTINEL;
+    return currentUser.cabang;
+  }
+  function isViewingAllCabang(){
+    return currentUser.role === 'admin' && getActiveCabang() === ALL_CABANG_SENTINEL;
+  }
+
+  function populateCabangControls(){
+    if(currentUser.role === 'admin'){
+      cabangSelect.style.display = '';
+      cabangReadonly.style.display = 'none';
+      filterCabang.style.display = '';
+      const prevVal = cabangSelect.value;
+      cabangSelect.innerHTML = '';
+      CABANG_LIST.forEach(c=>{
+        const opt = document.createElement('option');
+        opt.value = c; opt.textContent = c;
+        cabangSelect.appendChild(opt);
+      });
+      const allOpt = document.createElement('option');
+      allOpt.value = ALL_CABANG_SENTINEL;
+      allOpt.textContent = '🔀 Semua Cabang (gabungan, hanya lihat & export)';
+      cabangSelect.appendChild(allOpt);
+      if(prevVal && (CABANG_LIST.includes(prevVal) || prevVal === ALL_CABANG_SENTINEL)){
+        cabangSelect.value = prevVal;
+      } else if(CABANG_LIST.length){
+        cabangSelect.value = CABANG_LIST[0];
+      }
+
+      filterCabang.innerHTML = '<option value="">Semua cabang</option>';
+      CABANG_LIST.forEach(c=>{
+        const opt = document.createElement('option');
+        opt.value = c; opt.textContent = c;
+        filterCabang.appendChild(opt);
+      });
+    } else {
+      cabangSelect.style.display = 'none';
+      cabangReadonly.style.display = '';
+      cabangReadonly.value = currentUser.cabang || '(akun ini belum diset cabangnya, hubungi admin)';
+      filterCabang.style.display = 'none';
+    }
+  }
 
   function todayStr(){
     const d = new Date();
@@ -496,9 +687,9 @@
     stampBadge.classList.add('show');
   }
 
-  async function loadDateIndex(){
+  async function loadDateIndex(cabang){
     try{
-      const res = await appStorage.get(DATE_INDEX_KEY, false);
+      const res = await appStorage.get(dateIndexKey(cabang), true);
       if(res && res.value){
         const parsed = JSON.parse(res.value);
         if(Array.isArray(parsed)) return parsed;
@@ -506,30 +697,41 @@
     }catch(e){ /* belum ada index */ }
     return [];
   }
-  async function saveDateIndex(){
-    try{ await appStorage.set(DATE_INDEX_KEY, JSON.stringify(dateIndex), false); }
+  async function saveDateIndex(cabang, idx){
+    try{ await appStorage.set(dateIndexKey(cabang), JSON.stringify(idx), true); }
     catch(e){ console.error('Gagal simpan index tanggal', e); }
   }
-  function upsertDateIndex(date, count){
-    const i = dateIndex.findIndex(d=>d.date===date);
+  function upsertDateIndex(idx, date, count){
+    const i = idx.findIndex(d=>d.date===date);
     if(count > 0){
-      if(i>=0) dateIndex[i].count = count; else dateIndex.push({date, count});
+      if(i>=0) idx[i].count = count; else idx.push({date, count});
     } else if(i>=0){
-      dateIndex.splice(i,1);
+      idx.splice(i,1);
     }
-    dateIndex.sort((a,b)=> b.date.localeCompare(a.date));
-    saveDateIndex();
+    idx.sort((a,b)=> b.date.localeCompare(a.date));
+    return idx;
   }
 
-  async function loadItemsForDate(date){
+  async function loadItemsForDate(date, cabang){
     try{
-      const res = await appStorage.get(dateKey(date), false);
+      const res = await appStorage.get(dateKey(date, cabang), true);
       if(res && res.value){
         const parsed = JSON.parse(res.value);
-        if(Array.isArray(parsed)) return parsed;
+        if(Array.isArray(parsed)) return parsed.map(it => ({...it, cabang: it.cabang || cabang}));
       }
-    }catch(e){ /* belum ada data tanggal ini */ }
+    }catch(e){ /* belum ada data tanggal/cabang ini */ }
     return [];
+  }
+
+  async function loadItemsForDateAllCabang(date){
+    let merged = [];
+    const allBranches = CABANG_LIST.includes(LEGACY_CABANG_NAME) ? CABANG_LIST : [...CABANG_LIST, LEGACY_CABANG_NAME];
+    for(const c of allBranches){
+      const arr = await loadItemsForDate(date, c);
+      if(arr.length) merged = merged.concat(arr);
+    }
+    merged.sort((a,b)=> new Date(b.waktu) - new Date(a.waktu));
+    return merged;
   }
 
   async function migrateLegacyData(){
@@ -541,35 +743,46 @@
         await appStorage.delete(LEGACY_STORAGE_KEY, false).catch(()=>{});
         return;
       }
+      if(!CABANG_LIST.includes(LEGACY_CABANG_NAME)){
+        CABANG_LIST.push(LEGACY_CABANG_NAME);
+        await saveCabangList();
+      }
       const groups = {};
       legacyItems.forEach(it=>{
         const d = new Date(it.waktu);
         const pad = n => String(n).padStart(2,'0');
         const key = isNaN(d) ? todayStr() : `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
         if(!groups[key]) groups[key] = [];
-        groups[key].push(it);
+        groups[key].push({...it, cabang: LEGACY_CABANG_NAME});
       });
+      let idx = await loadDateIndex(LEGACY_CABANG_NAME);
       for(const [date, arr] of Object.entries(groups)){
-        const existing = await loadItemsForDate(date);
+        const existing = await loadItemsForDate(date, LEGACY_CABANG_NAME);
         const merged = existing.concat(arr);
-        await appStorage.set(dateKey(date), JSON.stringify(merged), false);
-        upsertDateIndex(date, merged.length);
+        await appStorage.set(dateKey(date, LEGACY_CABANG_NAME), JSON.stringify(merged), true);
+        idx = upsertDateIndex(idx, date, merged.length);
       }
+      await saveDateIndex(LEGACY_CABANG_NAME, idx);
       await appStorage.delete(LEGACY_STORAGE_KEY, false).catch(()=>{});
+      showToast('Data lama (sebelum sistem cabang) dipindahkan ke cabang "' + LEGACY_CABANG_NAME + '"');
     }catch(e){ /* tidak ada data lama, aman diabaikan */ }
   }
 
   async function persist(){
+    if(isViewingAllCabang()) return; // mode gabungan cuma buat lihat & export, tidak pernah nulis langsung
+    const cabang = getActiveCabang();
     try{
-      await appStorage.set(dateKey(selectedDate), JSON.stringify(items), false);
+      await appStorage.set(dateKey(selectedDate, cabang), JSON.stringify(items), true);
     }catch(e){
       console.error('Gagal menyimpan data', e);
     }
-    upsertDateIndex(selectedDate, items.length);
+    dateIndex = upsertDateIndex(dateIndex, selectedDate, items.length);
+    await saveDateIndex(cabang, dateIndex);
     populateDateSelect();
   }
 
   function grandTotal(){
+    if(isViewingAllCabang()) return items.length;
     const map = new Map(dateIndex.map(d=>[d.date, d.count]));
     map.set(selectedDate, items.length);
     let total = 0;
@@ -577,10 +790,22 @@
     return total;
   }
 
-  function populateDateSelect(){
+  async function populateDateSelect(){
     const today = todayStr();
-    const map = new Map(dateIndex.map(d=>[d.date, d.count]));
-    map.set(selectedDate, items.length);
+    let map;
+    if(isViewingAllCabang()){
+      // gabungkan tanggal dari index semua cabang biar dropdown tanggal tetap lengkap
+      map = new Map();
+      const allBranches = CABANG_LIST.includes(LEGACY_CABANG_NAME) ? CABANG_LIST : [...CABANG_LIST, LEGACY_CABANG_NAME];
+      for(const c of allBranches){
+        const idx = await loadDateIndex(c);
+        idx.forEach(d => map.set(d.date, (map.get(d.date)||0) + d.count));
+      }
+      map.set(selectedDate, items.length);
+    } else {
+      map = new Map(dateIndex.map(d=>[d.date, d.count]));
+      map.set(selectedDate, items.length);
+    }
     if(!map.has(today)) map.set(today, 0);
     const sorted = Array.from(map.keys()).sort((a,b)=> b.localeCompare(a));
     dateSelect.innerHTML = '';
@@ -597,30 +822,44 @@
 
   function updateAddControlsState(){
     const isViewingToday = selectedDate === todayStr();
-    resiInput.disabled = !isViewingToday;
-    addBtn.disabled = !isViewingToday;
-    kurirSelect.disabled = !isViewingToday;
-    catatanInput.disabled = !isViewingToday;
-    if(!isViewingToday){
+    const allMode = isViewingAllCabang();
+    const canAdd = isViewingToday && !allMode;
+    resiInput.disabled = !canAdd;
+    addBtn.disabled = !canAdd;
+    kurirSelect.disabled = !canAdd;
+    catatanInput.disabled = !canAdd;
+    if(!canAdd){
       if(camWrap.classList.contains('active')) stopCamera();
       camToggleBtn.disabled = true;
     } else {
       camToggleBtn.disabled = typeof hasBarcodeDetector !== 'undefined' && !hasBarcodeDetector;
     }
-    archiveNote.style.display = isViewingToday ? 'none' : 'inline-flex';
+    archiveNote.style.display = (isViewingToday && !allMode) ? 'none' : 'inline-flex';
+    document.getElementById('archiveNote').innerHTML = allMode
+      ? '🔀 Mode gabungan semua cabang — hanya untuk lihat &amp; unduh Excel, pilih 1 cabang dulu buat nambah/edit resi.'
+      : '📁 Mode arsip — resi baru cuma bisa ditambah di sesi hari ini. <button class="ghost small" id="backTodayBtn" type="button">Kembali ke hari ini</button>';
+    const btn = document.getElementById('backTodayBtn');
+    if(btn) btn.addEventListener('click', ()=> switchToDate(todayStr()));
   }
 
   async function switchToDate(date){
-    items = await loadItemsForDate(date);
     selectedDate = date;
+    if(isViewingAllCabang()){
+      items = await loadItemsForDateAllCabang(date);
+    } else {
+      const cabang = getActiveCabang();
+      dateIndex = await loadDateIndex(cabang);
+      items = await loadItemsForDate(date, cabang);
+    }
     selectedIds = new Set();
     updateAddControlsState();
-    populateDateSelect();
+    await populateDateSelect();
     render();
   }
 
   dateSelect.addEventListener('change', ()=> switchToDate(dateSelect.value));
-  backTodayBtn.addEventListener('click', ()=> switchToDate(todayStr()));
+  // catatan: tombol "Kembali ke hari ini" di-render ulang & di-bind dinamis di updateAddControlsState()
+  // karena konten archiveNote berubah tergantung mode gabungan/tidak.
 
   // cek pergantian hari secara berkala, biar sesi baru otomatis mulai kosong tiap hari
   function checkDateRollover(){
@@ -659,11 +898,257 @@
 
   async function load(){
     await selfTestStorage();
+    USERS = await loadUsers();
+    await ensureDefaultAdmin();
+    CABANG_LIST = await loadCabangList();
     await migrateLegacyData();
-    dateIndex = await loadDateIndex();
+    populateCabangControls();
     activeToday = todayStr();
     await switchToDate(activeToday);
   }
+
+  // ============== LOGIN / SESI ==============
+  const loginOverlay = document.getElementById('loginOverlay');
+  const loginUsername = document.getElementById('loginUsername');
+  const loginPassword = document.getElementById('loginPassword');
+  const loginBtn = document.getElementById('loginBtn');
+  const loginError = document.getElementById('loginError');
+  const appWrap = document.getElementById('appWrap');
+  const sessionUserLabel = document.getElementById('sessionUserLabel');
+  const sessionRoleTag = document.getElementById('sessionRoleTag');
+  const manageBtn = document.getElementById('manageBtn');
+  const logoutBtn = document.getElementById('logoutBtn');
+  const cabangSelect = document.getElementById('cabangSelect');
+  const cabangReadonly = document.getElementById('cabangReadonly');
+  const filterCabang = document.getElementById('filterCabang');
+  const adminModalOverlay = document.getElementById('adminModalOverlay');
+  const adminModalCloseBtn = document.getElementById('adminModalCloseBtn');
+  const newCabangName = document.getElementById('newCabangName');
+  const addCabangBtn = document.getElementById('addCabangBtn');
+  const cabangListWrap = document.getElementById('cabangListWrap');
+  const newUserUsername = document.getElementById('newUserUsername');
+  const newUserPassword = document.getElementById('newUserPassword');
+  const newUserRole = document.getElementById('newUserRole');
+  const newUserCabang = document.getElementById('newUserCabang');
+  const addUserBtn = document.getElementById('addUserBtn');
+  const userListWrap = document.getElementById('userListWrap');
+
+  function showLoginError(msg){ loginError.textContent = msg; loginError.classList.add('show'); }
+  function hideLoginError(){ loginError.classList.remove('show'); }
+
+  async function enterApp(){
+    loginOverlay.style.display = 'none';
+    appWrap.style.display = 'block';
+    sessionUserLabel.textContent = '👤 ' + currentUser.username + (currentUser.cabang ? (' · ' + currentUser.cabang) : '');
+    sessionRoleTag.textContent = currentUser.role === 'admin' ? 'ADMIN' : 'USER';
+    manageBtn.style.display = currentUser.role === 'admin' ? 'inline-flex' : 'none';
+    await load();
+  }
+
+  async function doLogin(){
+    hideLoginError();
+    const u = findUserByUsername(loginUsername.value);
+    if(!u || !checkPassword(loginPassword.value, u.password)){
+      showLoginError('Username atau password salah.');
+      return;
+    }
+    if(u.role !== 'admin' && !u.cabang){
+      showLoginError('Akun ini belum punya cabang, hubungi admin.');
+      return;
+    }
+    currentUser = u;
+    saveSession(u);
+    await enterApp();
+  }
+  loginBtn.addEventListener('click', doLogin);
+  loginPassword.addEventListener('keydown', (e)=>{ if(e.key==='Enter') doLogin(); });
+  loginUsername.addEventListener('keydown', (e)=>{ if(e.key==='Enter') loginPassword.focus(); });
+
+  logoutBtn.addEventListener('click', ()=>{
+    clearSession();
+    currentUser = null;
+    appWrap.style.display = 'none';
+    loginOverlay.style.display = 'flex';
+    loginUsername.value = ''; loginPassword.value = '';
+    hideLoginError();
+    loginUsername.focus();
+  });
+
+  cabangSelect.addEventListener('change', ()=>{
+    updateAddControlsState();
+    switchToDate(selectedDate);
+  });
+  filterCabang.addEventListener('change', render);
+
+  // ============== ADMIN: KELOLA CABANG & USER ==============
+  async function renameCabang(oldName, newName){
+    const trimmed = (newName || '').trim();
+    if(!trimmed || trimmed === oldName) return false;
+    const dup = CABANG_LIST.some(c => c.toLowerCase() === trimmed.toLowerCase() && c !== oldName);
+    if(dup){
+      showToast(`Cabang "${trimmed}" sudah ada, pakai nama lain`, 'warn');
+      return false;
+    }
+
+    // 1) ganti nama di daftar cabang & di semua akun user yang pakai cabang ini
+    const idxCabang = CABANG_LIST.indexOf(oldName);
+    if(idxCabang >= 0) CABANG_LIST[idxCabang] = trimmed;
+    USERS.forEach(u=>{ if(u.cabang === oldName) u.cabang = trimmed; });
+    await saveCabangList();
+    await saveUsers();
+
+    // 2) kalau slug storage-nya berubah (mis. nama beda cukup jauh), pindahkan data lama ke key baru
+    if(slugify(oldName) !== slugify(trimmed)){
+      const oldIdx = await loadDateIndex(oldName);
+      let newIdx = await loadDateIndex(trimmed);
+      for(const entry of oldIdx){
+        const oldItems = await loadItemsForDate(entry.date, oldName);
+        if(!oldItems.length) continue;
+        const retagged = oldItems.map(it => ({...it, cabang: trimmed}));
+        const existingNew = await loadItemsForDate(entry.date, trimmed);
+        const merged = existingNew.concat(retagged);
+        await appStorage.set(dateKey(entry.date, trimmed), JSON.stringify(merged), true);
+        newIdx = upsertDateIndex(newIdx, entry.date, merged.length);
+        await appStorage.delete(dateKey(entry.date, oldName), true).catch(()=>{});
+      }
+      await saveDateIndex(trimmed, newIdx);
+      await appStorage.delete(dateIndexKey(oldName), true).catch(()=>{});
+    } else {
+      // slug sama, cukup update teks nama cabang yang sudah kepatri di tiap item lama
+      const idx = await loadDateIndex(trimmed);
+      for(const entry of idx){
+        const arr = await loadItemsForDate(entry.date, trimmed);
+        if(!arr.length) continue;
+        const retagged = arr.map(it => ({...it, cabang: trimmed}));
+        await appStorage.set(dateKey(entry.date, trimmed), JSON.stringify(retagged), true);
+      }
+    }
+
+    // 3) kalau user yang lagi login sekarang cabangnya ikut berubah, sinkronkan sesi & tampilan
+    if(currentUser.cabang === oldName){
+      currentUser.cabang = trimmed;
+      saveSession(currentUser);
+      sessionUserLabel.textContent = '👤 ' + currentUser.username + (currentUser.cabang ? (' · ' + currentUser.cabang) : '');
+    }
+    return true;
+  }
+
+  function renderCabangList(){
+    cabangListWrap.innerHTML = CABANG_LIST.map((c,i)=>`
+      <div class="admin-row">
+        <span class="meta"><b>${escapeHtml(c)}</b></span>
+        <span style="display:flex;gap:6px;">
+          <button type="button" class="ghost small" data-edit-cabang="${i}">Edit</button>
+          <button type="button" class="ghost small" data-del-cabang="${i}">Hapus</button>
+        </span>
+      </div>`).join('') || '<p class="hint">Belum ada cabang. Tambahkan minimal 1 cabang dulu.</p>';
+    cabangListWrap.querySelectorAll('[data-edit-cabang]').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        const i = Number(btn.getAttribute('data-edit-cabang'));
+        const oldName = CABANG_LIST[i];
+        const newName = prompt('Ganti nama cabang:', oldName);
+        if(newName === null) return; // dibatalkan
+        const ok = await renameCabang(oldName, newName);
+        if(ok){
+          renderCabangList();
+          renderUserList();
+          populateNewUserCabangOptions();
+          populateCabangControls();
+          await switchToDate(selectedDate);
+          showToast(`Cabang diganti jadi "${newName.trim()}"`, 'success');
+        }
+      });
+    });
+    cabangListWrap.querySelectorAll('[data-del-cabang]').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        const i = Number(btn.getAttribute('data-del-cabang'));
+        const nama = CABANG_LIST[i];
+        const dipakai = USERS.some(u=>u.cabang===nama);
+        if(dipakai){
+          showToast(`Cabang "${nama}" masih dipakai oleh user, tidak bisa dihapus`, 'warn');
+          return;
+        }
+        if(!confirm(`Hapus cabang "${nama}"? Data resi yang sudah ada tidak ikut terhapus.`)) return;
+        CABANG_LIST.splice(i,1);
+        await saveCabangList();
+        renderCabangList();
+        populateNewUserCabangOptions();
+        populateCabangControls();
+        showToast('Cabang dihapus');
+      });
+    });
+  }
+  function populateNewUserCabangOptions(){
+    newUserCabang.innerHTML = '';
+    CABANG_LIST.forEach(c=>{
+      const opt = document.createElement('option');
+      opt.value = c; opt.textContent = c;
+      newUserCabang.appendChild(opt);
+    });
+  }
+  function renderUserList(){
+    userListWrap.innerHTML = USERS.map((u,i)=>`
+      <div class="admin-row">
+        <span class="meta"><b>${escapeHtml(u.username)}</b> — ${u.role === 'admin' ? 'Admin' : escapeHtml(u.cabang || '(belum ada cabang)')}</span>
+        <button type="button" class="ghost small" data-del-user="${i}" ${u.id===currentUser.id ? 'disabled title="Tidak bisa hapus akun sendiri"' : ''}>Hapus</button>
+      </div>`).join('');
+    userListWrap.querySelectorAll('[data-del-user]').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        const i = Number(btn.getAttribute('data-del-user'));
+        const u = USERS[i];
+        if(u.id === currentUser.id) return;
+        if(!confirm(`Hapus user "${u.username}"?`)) return;
+        USERS.splice(i,1);
+        await saveUsers();
+        renderUserList();
+        showToast('User dihapus');
+      });
+    });
+  }
+  function openAdminModal(){
+    populateNewUserCabangOptions();
+    renderCabangList();
+    renderUserList();
+    adminModalOverlay.classList.add('show');
+  }
+  manageBtn.addEventListener('click', openAdminModal);
+  adminModalCloseBtn.addEventListener('click', ()=> adminModalOverlay.classList.remove('show'));
+  adminModalOverlay.addEventListener('click', (e)=>{ if(e.target===adminModalOverlay) adminModalOverlay.classList.remove('show'); });
+
+  addCabangBtn.addEventListener('click', async ()=>{
+    const name = newCabangName.value.trim();
+    if(!name){ showToast('Nama cabang wajib diisi', 'warn'); return; }
+    if(CABANG_LIST.some(c=>c.toLowerCase()===name.toLowerCase())){
+      showToast('Cabang ini sudah ada', 'warn');
+      return;
+    }
+    CABANG_LIST.push(name);
+    await saveCabangList();
+    newCabangName.value = '';
+    renderCabangList();
+    populateNewUserCabangOptions();
+    populateCabangControls();
+    showToast(`Cabang "${name}" ditambahkan`, 'success');
+  });
+
+  addUserBtn.addEventListener('click', async ()=>{
+    const username = newUserUsername.value.trim();
+    const password = newUserPassword.value;
+    const role = newUserRole.value;
+    const cabang = role === 'admin' ? '' : newUserCabang.value;
+    if(!username || !password){ showToast('Username & password wajib diisi', 'warn'); return; }
+    if(findUserByUsername(username)){ showToast('Username ini sudah dipakai', 'warn'); return; }
+    if(role !== 'admin' && !cabang){ showToast('Tambahkan cabang dulu sebelum bikin user staf', 'warn'); return; }
+    USERS.push({ id: uid(), username, password: simpleHash(password), role, cabang });
+    await saveUsers();
+    newUserUsername.value = ''; newUserPassword.value = '';
+    renderUserList();
+    showToast(`User "${username}" ditambahkan`, 'success');
+  });
+
+  newUserRole.addEventListener('change', ()=>{
+    newUserCabang.style.display = newUserRole.value === 'admin' ? 'none' : '';
+  });
 
   function findDuplicates(resi, excludeId){
     const norm = resi.trim().toLowerCase();
@@ -720,6 +1205,10 @@
   }
 
   function addResi(rawResi, kurir, catatan){
+    if(isViewingAllCabang()){
+      showToast('Mode gabungan semua cabang cuma buat lihat & export — pilih 1 cabang dulu buat nambah resi', 'warn');
+      return;
+    }
     if(selectedDate !== todayStr()){
       showToast('Kamu lagi lihat arsip tanggal lama — pindah ke "Hari ini" dulu buat nambah resi baru', 'warn');
       return;
@@ -736,6 +1225,7 @@
       id: uid(),
       resi: resi,
       kurir: detectedKurir || kurir || 'LEX',
+      cabang: getActiveCabang(),
       waktu: new Date().toISOString(),
       catatan: catatan || '',
       namaToko: '',
@@ -760,6 +1250,10 @@
   }
 
   function deleteItem(id){
+    if(isViewingAllCabang()){
+      showToast('Mode gabungan semua cabang tidak bisa hapus data — pilih cabangnya dulu', 'warn');
+      return;
+    }
     items = items.filter(it => it.id !== id);
     selectedIds.delete(id);
     render();
@@ -767,6 +1261,10 @@
   }
 
   function updateItem(id, patch){
+    if(isViewingAllCabang()){
+      showToast('Mode gabungan semua cabang tidak bisa edit data — pilih cabangnya dulu', 'warn');
+      return;
+    }
     const it = items.find(x=>x.id===id);
     if(!it) return;
     Object.assign(it, patch);
@@ -781,8 +1279,10 @@
   function getFiltered(){
     const q = searchInput.value.trim().toLowerCase();
     const k = filterKurir.value;
+    const c = filterCabang.value;
     return items.filter(it=>{
       if(k && it.kurir !== k) return false;
+      if(c && it.cabang !== c) return false;
       if(q){
         const hay = [it.resi, it.catatan, it.namaToko, it.namaPenerima, it.namaBarang, it.alamat]
           .map(v => (v||'').toLowerCase()).join(' ');
@@ -863,9 +1363,14 @@
         if(k === it.kurir) o.selected = true;
         sel.appendChild(o);
       });
+      sel.disabled = isViewingAllCabang();
       sel.addEventListener('change', ()=> updateItem(it.id, {kurir: sel.value}));
       tdKurir.appendChild(sel);
       tr.appendChild(tdKurir);
+
+      const tdCabang = document.createElement('td');
+      tdCabang.textContent = it.cabang || '-';
+      tr.appendChild(tdCabang);
 
       const tdTime = document.createElement('td');
       tdTime.className = 'time-cell';
@@ -892,16 +1397,19 @@
       const detailBtn = document.createElement('button');
       detailBtn.className = 'detail-btn';
       detailBtn.textContent = hasDetail ? 'Edit' : 'Isi';
+      detailBtn.disabled = isViewingAllCabang();
       detailBtn.addEventListener('click', ()=> openModal(it.id));
       tdAksi.appendChild(detailBtn);
-      const delBtn = document.createElement('button');
-      delBtn.className = 'del-btn';
-      delBtn.textContent = '✕';
-      delBtn.title = 'Hapus';
-      delBtn.addEventListener('click', ()=>{
-        if(confirm('Hapus resi "' + it.resi + '" dari daftar?')) deleteItem(it.id);
-      });
-      tdAksi.appendChild(delBtn);
+      if(!isViewingAllCabang()){
+        const delBtn = document.createElement('button');
+        delBtn.className = 'del-btn';
+        delBtn.textContent = '✕';
+        delBtn.title = 'Hapus';
+        delBtn.addEventListener('click', ()=>{
+          if(confirm('Hapus resi "' + it.resi + '" dari daftar?')) deleteItem(it.id);
+        });
+        tdAksi.appendChild(delBtn);
+      }
       tr.appendChild(tdAksi);
 
       tableBody.appendChild(tr);
@@ -942,6 +1450,10 @@
   });
 
   bulkDeleteBtn.addEventListener('click', ()=>{
+    if(isViewingAllCabang()){
+      showToast('Mode gabungan semua cabang tidak bisa hapus data — pilih cabangnya dulu', 'warn');
+      return;
+    }
     if(selectedIds.size === 0) return;
     if(confirm(`Hapus ${selectedIds.size} resi terpilih dari daftar?`)){
       items = items.filter(it => !selectedIds.has(it.id));
@@ -984,6 +1496,10 @@
   });
 
   resetAllBtn.addEventListener('click', ()=>{
+    if(isViewingAllCabang()){
+      showToast('Mode gabungan semua cabang tidak bisa reset data — pilih cabangnya dulu', 'warn');
+      return;
+    }
     if(items.length === 0) return;
     if(confirm(`Hapus SEMUA data resi pada tanggal ${fmtDateLabel(selectedDate)}? Tindakan ini tidak bisa dibatalkan.`)){
       items = [];
@@ -1024,6 +1540,7 @@
     });
 
     const rawList = exportItemsChron.map(it => it.resi);
+    const cabangListForExport = exportItemsChron.map(it => it.cabang || '-');
     const tanggalList = exportItemsChron.map(it => fmtDate(it.waktu));
     const jamList = exportItemsChron.map(it => fmtJam(it.waktu));
 
@@ -1035,14 +1552,15 @@
     });
     const isDup = (val) => val && (resiCounts[normResi(val)] || 0) > 1;
 
-    // header row: INPUT | Tanggal Scan | Jam Scan | (blank) | TOTAL RESI | No | Kurir1 | No | Kurir2 | ...
-    const header = ['INPUT', 'Tanggal Scan', 'Jam Scan', '', 'TOTAL RESI', ...orderedKurir.flatMap(k => ['No', k])];
+    // header row: INPUT | Cabang | Tanggal Scan | Jam Scan | (blank) | TOTAL RESI | No | Kurir1 | No | Kurir2 | ...
+    const header = ['INPUT', 'Cabang', 'Tanggal Scan', 'Jam Scan', '', 'TOTAL RESI', ...orderedKurir.flatMap(k => ['No', k])];
 
     const maxRows = Math.max(rawList.length, ...orderedKurir.map(k => groups[k].length), 0);
     const aoa = [header];
     for(let i=0; i<maxRows; i++){
       const row = [
         rawList[i] || '',
+        cabangListForExport[i] || '',
         tanggalList[i] || '',
         jamList[i] || '',
         '',
@@ -1057,7 +1575,7 @@
     }
 
     const ws = XLSX.utils.aoa_to_sheet(aoa);
-    const cols = [{wch:22},{wch:12},{wch:10},{wch:2},{wch:11}];
+    const cols = [{wch:22},{wch:18},{wch:12},{wch:10},{wch:2},{wch:11}];
     orderedKurir.forEach(()=> cols.push({wch:5},{wch:22}));
     ws['!cols'] = cols;
     header.forEach((_, c)=>{
@@ -1086,7 +1604,8 @@
     XLSX.utils.book_append_sheet(wb, buildRekapSheet(exportItemsChron), 'Manifest Resi');
 
     const stamp = new Date();
-    const fname = `No resi ${selectedDate} ( ${String(stamp.getHours()).padStart(2,'0')}.${String(stamp.getMinutes()).padStart(2,'0')} ).xlsx`;
+    const scopeLabel = isViewingAllCabang() ? 'Semua Cabang' : getActiveCabang();
+    const fname = `No resi ${selectedDate} - ${scopeLabel} ( ${String(stamp.getHours()).padStart(2,'0')}.${String(stamp.getMinutes()).padStart(2,'0')} ).xlsx`;
     XLSX.writeFile(wb, fname);
     showToast('Excel berhasil diunduh: ' + fname, 'success');
   });
@@ -1406,8 +1925,24 @@
     showToast('Kode unik kurir dikembalikan ke default');
   });
 
-  load();
-  loadPrefixes();
+  async function init(){
+    loadPrefixes(); // tidak tergantung login, aman dijalankan lebih dulu
+    USERS = await loadUsers();
+    await ensureDefaultAdmin();
+    const session = readSession();
+    if(session){
+      const u = USERS.find(x => x.id === session.id);
+      if(u){
+        currentUser = u;
+        await enterApp();
+        return;
+      }
+      clearSession();
+    }
+    loginOverlay.style.display = 'flex';
+    loginUsername.focus();
+  }
+  init();
 })();
 </script>
 </body>
